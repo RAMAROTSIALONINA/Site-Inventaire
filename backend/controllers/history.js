@@ -1,5 +1,7 @@
 // backend/controllers/history.js - VERSION COMPLÈTE
 import pool from '../config/database.js';
+// REMPLACEZ l'import existant par :
+import PDFDocument from 'pdfkit';
 
 // ======================
 // FONCTIONS HISTORIQUE
@@ -557,10 +559,11 @@ export const exportInventoryPDF = async (req, res) => {
     const { 
       date = new Date().toISOString().split('T')[0],
       site_id,
-      category_id
+      category_id,
+      low_stock_only = false
     } = req.query;
 
-    console.log('📄 GET /inventory/export/pdf - Date:', date);
+    console.log('📄 GET /inventory/export/pdf - Début', { date, site_id, category_id, low_stock_only });
 
     // Récupérer les données d'inventaire
     let query = `
@@ -601,12 +604,26 @@ export const exportInventoryPDF = async (req, res) => {
       values.push(parseInt(category_id));
     }
 
+    if (low_stock_only === 'true') {
+      query += ` AND (a.current_stock <= a.alert_threshold OR a.current_stock = 0)`;
+    }
+
     query += ` ORDER BY a.code, a.name`;
 
+    console.log('🔍 Exécution requête inventaire...');
     const result = await pool.query(query, values);
     const inventory = result.rows;
 
-    // Calculer les totaux
+    console.log('📊 Données récupérées:', inventory.length, 'articles');
+
+    if (!inventory || inventory.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Aucune donnée d\'inventaire trouvée pour les critères sélectionnés'
+      });
+    }
+
+    // Calcul des totaux
     const totals = {
       total_articles: inventory.length,
       total_stock: inventory.reduce((sum, item) => sum + parseFloat(item.current_stock || 0), 0),
@@ -616,122 +633,230 @@ export const exportInventoryPDF = async (req, res) => {
       ok_items: inventory.filter(item => item.status === 'OK').length
     };
 
-    // Générer le HTML pour le PDF
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Inventaire ${date}</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 20px; }
-          .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
-          .header h1 { color: #2c3e50; margin: 0; }
-          .header .subtitle { color: #666; font-size: 16px; }
-          .summary { background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
-          .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-          .summary-item { text-align: center; }
-          .summary-value { font-size: 24px; font-weight: bold; color: #3498db; }
-          .summary-label { font-size: 12px; color: #666; }
-          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-          th { background: #34495e; color: white; padding: 12px; text-align: left; }
-          td { padding: 10px; border-bottom: 1px solid #ddd; }
-          tr:nth-child(even) { background: #f8f9fa; }
-          .status-ok { color: #27ae60; font-weight: bold; }
-          .status-alerte { color: #f39c12; font-weight: bold; }
-          .status-rupture { color: #e74c3c; font-weight: bold; }
-          .footer { margin-top: 30px; text-align: center; color: #666; font-size: 12px; border-top: 1px solid #ddd; padding-top: 10px; }
-          .currency { text-align: right; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>📊 INVENTAIRE DES ARTICLES</h1>
-          <div class="subtitle">État au ${new Date(date).toLocaleDateString('fr-FR')}</div>
-        </div>
-
-        <div class="summary">
-          <div class="summary-grid">
-            <div class="summary-item">
-              <div class="summary-value">${totals.total_articles}</div>
-              <div class="summary-label">Articles Total</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-value">${totals.total_stock}</div>
-              <div class="summary-label">Stock Total</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-value">${totals.total_value.toFixed(2)} €</div>
-              <div class="summary-label">Valeur Totale</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-value">${totals.ok_items}</div>
-              <div class="summary-label">✅ En Stock</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-value">${totals.alert_items}</div>
-              <div class="summary-label">⚠️ En Alerte</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-value">${totals.out_of_stock}</div>
-              <div class="summary-label">❌ Rupture</div>
-            </div>
-          </div>
-        </div>
-
-        <table>
-          <thead>
-            <tr>
-              <th>Code</th>
-              <th>Nom</th>
-              <th>Catégorie</th>
-              <th>Site</th>
-              <th>Stock</th>
-              <th>Seuil</th>
-              <th>Statut</th>
-              <th class="currency">Valeur</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${inventory.map(item => `
-              <tr>
-                <td><strong>${item.code}</strong></td>
-                <td>${item.name}</td>
-                <td>${item.category_name || '-'}</td>
-                <td>${item.site_name || '-'}</td>
-                <td>${item.current_stock} ${item.unit_symbol || ''}</td>
-                <td>${item.alert_threshold} ${item.unit_symbol || ''}</td>
-                <td class="status-${item.status.toLowerCase()}">${item.status}</td>
-                <td class="currency">${parseFloat(item.stock_value || 0).toFixed(2)} €</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-
-        <div class="footer">
-          <p>Document généré le ${new Date().toLocaleString('fr-FR')} • SWIS Inventory System</p>
-          <p>Total: ${totals.total_articles} articles • Valeur totale: ${totals.total_value.toFixed(2)} €</p>
-        </div>
-      </body>
-      </html>
-    `;
-
-    const filename = `inventaire_${date.replace(/-/g, '')}.html`;
+    // 🔥 CRÉATION DU PDF - VERSION SIMPLIFIÉE
+    const doc = new PDFDocument({ margin: 50 });
     
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send(htmlContent);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="inventaire_${date}.pdf"`);
+    
+    doc.pipe(res);
 
-    console.log('✅ HTML/PDF exporté:', inventory.length, 'articles');
+    // ==================== EN-TÊTE SIMPLE ====================
+    doc.fontSize(20)
+       .fillColor('#2c3e50')
+       .text('INVENTAIRE DES ARTICLES', { align: 'center' });
+    
+    doc.moveDown(0.3);
+    doc.fontSize(12)
+       .fillColor('#666666')
+       .text(`Date: ${date}`, { align: 'center' });
+    
+    doc.moveDown(1.5);
+
+    // ==================== TABLEAU DIRECT ====================
+    const startY = doc.y;
+    
+    // 🔥 EN-TÊTE DU TABLEAU
+    doc.fillColor('#34495e')
+       .rect(50, startY, 500, 20)
+       .fill();
+    
+    doc.fillColor('#ffffff')
+       .fontSize(9)
+       .text('CODE', 55, startY + 6)
+       .text('NOM', 90, startY + 6)
+       .text('CATÉGORIE', 160, startY + 6)
+       .text('SITE', 230, startY + 6)
+       .text('STOCK', 290, startY + 6)
+       .text('SEUIL', 340, startY + 6)
+       .text('STATUT', 390, startY + 6)
+       .text('VALEUR', 450, startY + 6);
+    
+    let yPosition = startY + 25;
+
+    // 🔥 DONNÉES DU TABLEAU
+    doc.fontSize(8)
+       .fillColor('#2c3e50');
+    
+    inventory.forEach((item, index) => {
+      // Nouvelle page si nécessaire
+      if (yPosition > 700) {
+        doc.addPage();
+        yPosition = 50;
+        
+        // Redessiner l'en-tête sur nouvelle page
+        doc.fillColor('#34495e')
+           .rect(50, yPosition - 20, 500, 20)
+           .fill();
+        
+        doc.fillColor('#ffffff')
+           .fontSize(9)
+           .text('CODE', 55, yPosition - 14)
+           .text('NOM', 90, yPosition - 14)
+           .text('CATÉGORIE', 160, yPosition - 14)
+           .text('SITE', 230, yPosition - 14)
+           .text('STOCK', 290, yPosition - 14)
+           .text('SEUIL', 340, yPosition - 14)
+           .text('STATUT', 390, yPosition - 14)
+           .text('VALEUR', 450, yPosition - 14);
+        
+        yPosition += 5;
+      }
+
+      // Fond alterné pour lisibilité
+      if (index % 2 === 0) {
+        doc.fillColor('#f8f9fa')
+           .rect(50, yPosition - 3, 500, 12)
+           .fill();
+      }
+
+      // Couleur selon le statut
+      let statusColor = '#27ae60'; // Vert pour OK
+      if (item.status === 'ALERTE') statusColor = '#f39c12'; // Orange pour alerte
+      if (item.status === 'RUPTURE') statusColor = '#e74c3c'; // Rouge pour rupture
+
+      // Affichage des données
+      doc.fillColor('#2c3e50')
+         .text(item.code || '-', 55, yPosition)
+         .text(truncateText(item.name, 20), 90, yPosition)
+         .text(truncateText(item.category_name, 15), 160, yPosition)
+         .text(truncateText(item.site_name, 12), 230, yPosition)
+         .text(`${item.current_stock}`, 290, yPosition)
+         .text(`${item.alert_threshold}`, 340, yPosition)
+         .fillColor(statusColor)
+         .text(item.status, 390, yPosition)
+         .fillColor('#2c3e50')
+         .text(`${parseFloat(item.stock_value || 0).toFixed(2)} `, 450, yPosition);
+
+      yPosition += 12;
+    });
+
+    // ==================== ANALYSE AMÉLIORÉE ====================
+    const pageHeight = doc.page.height;
+    const spaceLeft = pageHeight - yPosition;
+    
+    if (spaceLeft < 150) {
+      doc.addPage();
+      yPosition = 50;
+    } else {
+      yPosition += 20;
+    }
+
+    // 🔥 ANALYSE VISUELLE AMÉLIORÉE
+    doc.fillColor('#2c3e50')
+       .fontSize(14)
+       .text('ANALYSE DU STOCK', 50, yPosition);
+    
+    doc.moveDown(1);
+
+    // Statistiques détaillées
+    const okPercent = ((totals.ok_items / totals.total_articles) * 100).toFixed(1);
+    const alertPercent = ((totals.alert_items / totals.total_articles) * 100).toFixed(1);
+    const rupturePercent = ((totals.out_of_stock / totals.total_articles) * 100).toFixed(1);
+
+    doc.fontSize(10)
+       .text(` Répartition des ${totals.total_articles} articles:`, 50, doc.y);
+    
+    // Barre de progression visuelle
+    const barWidth = 400;
+    const barHeight = 15;
+    const barY = doc.y + 20;
+    
+    // OK - Vert
+    if (totals.ok_items > 0) {
+      const okWidth = (totals.ok_items / totals.total_articles) * barWidth;
+      doc.fillColor('#27ae60')
+         .rect(50, barY, okWidth, barHeight)
+         .fill();
+    }
+    
+    // Alerte - Orange
+    if (totals.alert_items > 0) {
+      const alertWidth = (totals.alert_items / totals.total_articles) * barWidth;
+      doc.fillColor('#f39c12')
+         .rect(50 + (totals.ok_items / totals.total_articles) * barWidth, barY, alertWidth, barHeight)
+         .fill();
+    }
+    
+    // Rupture - Rouge
+    if (totals.out_of_stock > 0) {
+      const ruptureWidth = (totals.out_of_stock / totals.total_articles) * barWidth;
+      doc.fillColor('#e74c3c')
+         .rect(50 + ((totals.ok_items + totals.alert_items) / totals.total_articles) * barWidth, barY, ruptureWidth, barHeight)
+         .fill();
+    }
+
+    // Légende
+    const legendY = barY + 25;
+    doc.fillColor('#2c3e50')
+       .fontSize(8);
+    
+    if (totals.ok_items > 0) {
+      doc.fillColor('#27ae60').text('■', 50, legendY);
+      doc.fillColor('#2c3e50').text(` Stock normal: ${totals.ok_items} articles (${okPercent}%)`, 65, legendY);
+    }
+    
+    if (totals.alert_items > 0) {
+      doc.fillColor('#f39c12').text('■', 50, legendY + 15);
+      doc.fillColor('#2c3e50').text(` Stock d'alerte: ${totals.alert_items} articles (${alertPercent}%)`, 65, legendY + 15);
+    }
+    
+    if (totals.out_of_stock > 0) {
+      doc.fillColor('#e74c3c').text('■', 50, legendY + 30);
+      doc.fillColor('#2c3e50').text(` Rupture de stock: ${totals.out_of_stock} articles (${rupturePercent}%)`, 65, legendY + 30);
+    }
+
+    doc.moveDown(3);
+
+    // 🔥 RECOMMANDATIONS CLAIRES
+    if (totals.alert_items > 0 || totals.out_of_stock > 0) {
+      doc.fillColor('#e74c3c')
+         .fontSize(12)
+         .text(' ACTIONS REQUISES:', 50, doc.y);
+      
+      doc.fillColor('#2c3e50')
+         .fontSize(9);
+      
+      let actionY = doc.y + 15;
+      
+      if (totals.out_of_stock > 0) {
+        doc.text(`• Commande urgente pour ${totals.out_of_stock} article(s) en rupture`, 60, actionY);
+        actionY += 12;
+      }
+      
+      if (totals.alert_items > 0) {
+        doc.text(`• Réapprovisionnement recommandé pour ${totals.alert_items} article(s) en alerte`, 60, actionY);
+        actionY += 12;
+      }
+    }
+
+    // ==================== PIED DE PAGE ====================
+    doc.moveDown(2);
+    doc.fontSize(8)
+       .fillColor('#666666')
+       .text(`Document généré le ${new Date().toLocaleString('fr-FR')} • Total stock: ${totals.total_stock} unités • Valeur totale: ${totals.total_value.toFixed(2)} `, { align: 'center' });
+
+    // FINALISATION
+    doc.end();
+
+    console.log('✅ PDF amélioré généré avec succès');
 
   } catch (error) {
     console.error('❌ Erreur export PDF:', error);
     res.status(500).json({ 
       success: false,
-      error: 'Erreur lors de l\'export PDF'
+      error: 'Erreur lors de la génération du PDF',
+      details: error.message
     });
   }
 };
+
+// Fonction utilitaire pour tronquer le texte
+function truncateText(text, maxLength) {
+  if (!text) return '-';
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength - 3) + '...';
+}
 
 export const exportHistoryCSV = async (req, res) => {
   try {

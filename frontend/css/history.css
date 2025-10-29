@@ -1111,3 +1111,77 @@
 .history-modal-content {
     isolation: isolate;
 }
+.notification-with-actions {
+    min-width: 300px;
+}
+
+.notification-actions {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.notification-actions .btn {
+    padding: 4px 8px;
+    font-size: 12px;
+}
+.export-alternatives {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    margin: 20px 0;
+}
+
+.alternative-option {
+    display: flex;
+    align-items: flex-start;
+    padding: 20px;
+    border: 2px solid #e9ecef;
+    border-radius: 10px;
+    gap: 15px;
+    transition: all 0.3s ease;
+}
+
+.alternative-option:hover {
+    border-color: #007bff;
+    background-color: #f8f9fa;
+}
+
+.alternative-icon {
+    font-size: 32px;
+    flex-shrink: 0;
+}
+
+.alternative-content {
+    flex: 1;
+}
+
+.alternative-content h4 {
+    margin: 0 0 10px 0;
+    color: #333;
+}
+
+.alternative-content p {
+    margin: 0 0 10px 0;
+    color: #666;
+}
+
+.alternative-content ul {
+    margin: 10px 0;
+    padding-left: 20px;
+    color: #555;
+}
+
+.alternative-content li {
+    margin-bottom: 5px;
+}
+
+.alert-info {
+    background-color: #d1ecf1;
+    border-color: #bee5eb;
+    color: #0c5460;
+    padding: 15px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+}

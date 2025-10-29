@@ -1,59 +1,371 @@
-// frontend/js/api.js - VERSION COMPLÈTE AVEC HISTORIQUE
-
+// frontend/js/api.js - VERSION COMPLÈTE CORRIGÉE
 class ApiService {
     static baseURL = 'http://localhost:3000/api';
     static token = localStorage.getItem('authToken');
 
-    // 🔥 MÉTHODE request CORRIGÉE
-static async request(endpoint, options = {}) {
-    const url = `${this.baseURL}${endpoint}`;
-    
-    console.log(`🔗 API ${options.method || 'GET'} ${url}`, options.body || '');
+    // 🔥 MÉTHODE REQUEST CORRIGÉE POUR LES EXPORTS
+    static async request(endpoint, options = {}) {
+        const url = `${this.baseURL}${endpoint}`;
+        
+        console.log(`🔗 API ${options.method || 'GET'} ${url}`);
 
-    const config = {
-        headers: {
-            'Content-Type': 'application/json',
-            ...(this.token && { 'Authorization': `Bearer ${this.token}` })
-        },
-        ...options
-    };
+        // Configuration des headers
+        const headers = {
+            ...(this.token && { 'Authorization': `Bearer ${this.token}` }),
+            ...options.headers
+        };
 
-    if (options.body && typeof options.body === 'object') {
-        config.body = JSON.stringify(options.body);
-    }
-
-    try {
-        const response = await fetch(url, config);
-        console.log(`📡 Réponse ${response.status} ${url}`);
-
-        if (response.status === 204) {
-            return { success: true };
+        // Ne pas ajouter Content-Type pour les FormData
+        if (options.body && !(options.body instanceof FormData) && !headers['Content-Type']) {
+            headers['Content-Type'] = 'application/json';
         }
 
-        if (!response.ok) {
-            let errorMessage = `HTTP ${response.status}`;
-            try {
-                const errorData = await response.json();
-                errorMessage = errorData.error || errorData.message || errorMessage;
-            } catch (e) {
-                const text = await response.text();
-                if (text) errorMessage = text;
+        const config = {
+            headers,
+            credentials: 'include',
+            ...options
+        };
+
+        // Gérer le body selon le type
+        if (options.body) {
+            if (options.body instanceof FormData) {
+                config.body = options.body;
+                delete config.headers['Content-Type'];
+            } else if (typeof options.body === 'object') {
+                config.body = JSON.stringify(options.body);
             }
-            throw new Error(errorMessage);
         }
 
-        const text = await response.text();
-        if (text) {
-            return JSON.parse(text);
-        } else {
-            return { success: true };
+        try {
+            const response = await fetch(url, config);
+            console.log(`📡 Réponse ${response.status} ${url}`);
+
+            // Gérer les réponses sans contenu
+            if (response.status === 204) {
+                return { success: true };
+            }
+
+            // 🔥 DÉTECTION DES TYPES DE RÉPONSE
+            const contentType = response.headers.get('content-type') || '';
+            const isPDF = contentType.includes('application/pdf');
+            const isCSV = contentType.includes('text/csv') || contentType.includes('application/csv');
+            const isJSON = contentType.includes('application/json');
+            
+            console.log('📄 Content-Type:', contentType);
+            console.log('📊 Type détecté - PDF:', isPDF, 'CSV:', isCSV, 'JSON:', isJSON);
+
+            // 🔥 GESTION DES EXPORTS (PDF ET CSV)
+            // 🔥 SOLUTION 2 - Gestion robuste des réponses
+if (isPDF || isCSV) {
+    console.log('📄 Réponse de type fichier détectée');
+    
+    // Lire d'abord le contenu pour identifier le type réel
+    const responseClone = response.clone();
+    const buffer = await responseClone.arrayBuffer();
+    const firstBytes = new Uint8Array(buffer).subarray(0, 4);
+    
+    // Vérifier les signatures de fichiers
+    const isRealPDF = firstBytes[0] === 0x25 && firstBytes[1] === 0x50 && firstBytes[2] === 0x44 && firstBytes[3] === 0x46; // %PDF
+    const isRealCSV = !isPDF; // Simplification
+    
+    console.log('🔍 Signature fichier:', {
+        firstBytes: Array.from(firstBytes),
+        isRealPDF,
+        isRealCSV,
+        contentLength: buffer.byteLength
+    });
+    
+    if (!response.ok) {
+        // Essayer de lire comme texte pour voir l'erreur
+        const errorText = new TextDecoder().decode(buffer);
+        
+        if (errorText.startsWith('<') || errorText.includes('<!DOCTYPE') || errorText.includes('<html')) {
+            console.error('❌ Page HTML reçue au lieu du PDF');
+            
+            // Extraire des informations de la page HTML
+            let errorInfo = `Erreur ${response.status} - `;
+            if (errorText.includes('404')) errorInfo += 'Endpoint non trouvé';
+            else if (errorText.includes('401') || errorText.includes('login')) errorInfo += 'Non authentifié';
+            else if (errorText.includes('500')) errorInfo += 'Erreur serveur';
+            else errorInfo += 'Page HTML d\'erreur';
+            
+            throw new Error(errorInfo);
         }
         
+        throw new Error(`Erreur ${response.status}: ${errorText.substring(0, 100)}`);
+    }
+    
+    // Si la réponse est OK mais que ce n'est pas un PDF, vérifier
+    if (isPDF && !isRealPDF) {
+        const contentPreview = new TextDecoder().decode(buffer.subarray(0, 200));
+        console.warn('⚠️ Content-Type dit PDF mais signature incorrecte:', contentPreview);
+    }
+    
+    const blob = new Blob([buffer], { type: isPDF ? 'application/pdf' : 'text/csv' });
+    
+    if (blob.size === 0) {
+        throw new Error('Fichier vide généré');
+    }
+    
+    console.log('📦 Blob créé:', { size: blob.size, type: blob.type });
+    
+    const filename = this.getFilenameFromResponse(response) || 
+                   `inventaire_${new Date().toISOString().split('T')[0]}.${isPDF ? 'pdf' : 'csv'}`;
+    
+    this.downloadBlob(blob, filename);
+    return { 
+        success: true, 
+        filename, 
+        blobSize: blob.size,
+        blobType: blob.type
+    };
+}
+
+// 🔥 NOUVEAU CODE CORRIGÉ
+const responseText = await response.text();
+
+if (!response.ok) {
+    let errorMessage = `Erreur ${response.status}`;
+    
+    // Si c'est du HTML, ne pas essayer de le parser en JSON
+    if (responseText.startsWith('<') || responseText.includes('<!DOCTYPE') || responseText.includes('<html')) {
+        // Analyser le type d'erreur HTML
+        if (responseText.includes('404') || responseText.includes('Not Found')) {
+            errorMessage = `Endpoint non trouvé (404): ${url}`;
+        } else if (responseText.includes('401') || responseText.includes('Unauthorized') || responseText.includes('login')) {
+            errorMessage = 'Accès non autorisé - Veuillez vous reconnecter';
+        } else if (responseText.includes('500')) {
+            errorMessage = 'Erreur interne du serveur (500)';
+        } else {
+            errorMessage = `Le serveur a retourné une page HTML (${response.status})`;
+        }
+    } 
+    // Si ça ressemble à du JSON, essayer de le parser
+    else if (responseText.trim().startsWith('{') || responseText.includes('"error"')) {
+        try {
+            const errorData = JSON.parse(responseText);
+            errorMessage = errorData.error || errorData.message || errorMessage;
+        } catch (e) {
+            errorMessage = responseText.substring(0, 200) || errorMessage;
+        }
+    } 
+    // Autre type de contenu
+    else {
+        errorMessage = responseText.substring(0, 200) || errorMessage;
+    }
+    
+    throw new Error(errorMessage);
+}
+
+// Réponse OK - vérifier si c'est du JSON avant de parser
+// Réponse OK - vérifier si c'est du JSON avant de parser
+if (responseText && responseText.trim()) {
+    try {
+        // Vérifier que c'est bien du JSON avant de parser
+        if (responseText.trim().startsWith('{') || responseText.trim().startsWith('[')) {
+            return JSON.parse(responseText);
+        } else {
+            // Si ce n'est pas du JSON, analyser ce que c'est
+            console.warn('⚠️ Réponse non-JSON reçue pour:', url);
+            
+            if (responseText.startsWith('<') || responseText.includes('<!DOCTYPE')) {
+                // 🔥 ANALYSER LA PAGE HTML
+                const htmlAnalysis = this.analyzeHTMLResponse(responseText, url);
+                
+                // Si on attendait un PDF mais on a reçu du HTML, c'est une erreur
+                if (url.includes('/export/pdf') || url.includes('/pdf')) {
+                    throw new Error(`L'endpoint PDF retourne une page HTML: ${htmlAnalysis.errorType} - ${htmlAnalysis.title}`);
+                }
+                
+                // Pour les autres cas, retourner l'analyse
+                return { 
+                    success: false, 
+                    error: `Page HTML reçue: ${htmlAnalysis.errorType}`,
+                    htmlAnalysis 
+                };
+            }
+            
+            // Autres types de contenu (texte simple, etc.)
+            return { success: true, data: responseText };
+        }
+    } catch (parseError) {
+        console.error('❌ Erreur parsing réponse:', parseError);
+        throw new Error(`Réponse invalide du serveur: ${parseError.message}`);
+    }
+} else {
+    return { success: true };
+}
+            
+        } catch (error) {
+            console.error(`❌ API ${url} - Erreur:`, error);
+            throw error;
+        }
+    }
+    // 🔥 ANALYSE DE LA PAGE HTML
+static analyzeHTMLResponse(html, url) {
+    console.log('🔍 Analyse de la réponse HTML:');
+    
+    // Extraire le titre de la page
+    const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+    const title = titleMatch ? titleMatch[1] : 'Titre non trouvé';
+    
+    // Chercher des indices d'erreur
+    let errorType = 'Page HTML inconnue';
+    if (html.includes('404') || html.includes('Not Found')) {
+        errorType = 'Erreur 404 - Page non trouvée';
+    } else if (html.includes('500') || html.includes('Internal Server Error')) {
+        errorType = 'Erreur 500 - Serveur';
+    } else if (html.includes('Cannot GET') || html.includes('Cannot POST')) {
+        errorType = 'Endpoint inexistant';
+    } else if (html.includes('login') || html.includes('Login')) {
+        errorType = 'Page de login - Authentification requise';
+    }
+    
+    console.log('📄 Titre de la page:', title);
+    console.log('🚨 Type d\'erreur:', errorType);
+    console.log('🔗 URL appelée:', url);
+    
+    return { title, errorType, preview: html.substring(0, 300) };
+}
+
+    // 🔥 MÉTHODES D'EXPORT SIMPLIFIÉES
+    static async exportInventoryPDF(filters = {}) {
+        try {
+            console.log('📊 Début export PDF...');
+            
+            const params = new URLSearchParams();
+            
+            Object.keys(filters).forEach(key => {
+                const value = filters[key];
+                if (value !== undefined && value !== null && value !== '') {
+                    params.append(key, value.toString());
+                }
+            });
+            
+            const endpoint = `/history/inventory/export/pdf?${params}`;
+            
+            console.log('🔗 Endpoint PDF:', endpoint);
+            console.log('📋 Filtres:', Object.fromEntries(params));
+            
+            const response = await this.request(endpoint);
+            return response;
+            
+        } catch (error) {
+            console.error('❌ Erreur export PDF:', error);
+            
+            // Messages d'erreur plus explicites
+            let userMessage = error.message;
+            
+            if (error.message.includes('HTML')) {
+                userMessage = 'Le serveur ne retourne pas un PDF valide. Vérifiez que la route existe.';
+            } else if (error.message.includes('401') || error.message.includes('non autorisé')) {
+                userMessage = 'Session expirée. Veuillez vous reconnecter.';
+            } else if (error.message.includes('404')) {
+                userMessage = 'Fonction d\'export PDF non disponible.';
+            } else if (error.message.includes('vide')) {
+                userMessage = 'Aucune donnée à exporter.';
+            }
+            
+            throw new Error(`Erreur export PDF: ${userMessage}`);
+        }
+    }
+
+    static async exportInventoryCSV(filters = {}) {
+        try {
+            console.log('📄 Début export CSV...');
+            
+            const params = new URLSearchParams(filters);
+            const endpoint = `/history/inventory/export/csv?${params}`;
+            
+            console.log('🔗 Endpoint CSV:', endpoint);
+            
+            const response = await this.request(endpoint);
+            return response;
+            
+        } catch (error) {
+            console.error('❌ Erreur export CSV:', error);
+            throw new Error(`Erreur export CSV: ${error.message}`);
+        }
+    }
+    static async testPDFEndpoint() {
+    try {
+        const testUrl = `${this.baseURL}/history/inventory/export/pdf`;
+        console.log('🔍 Test endpoint:', testUrl);
+        
+        const response = await fetch(testUrl, {
+            headers: {
+                'Authorization': `Bearer ${this.token}`,
+            }
+        });
+        
+        const content = await response.text();
+        console.log('📄 Réponse serveur (premiers 500 caractères):', content.substring(0, 500));
+        
+        return content;
     } catch (error) {
-        console.error(`❌ API ${url} - Erreur:`, error);
+        console.error('❌ Test endpoint failed:', error);
         throw error;
     }
 }
+
+    static async exportHistoryCSV(filters = {}) {
+        try {
+            console.log('📋 Début export historique CSV...');
+            
+            const params = new URLSearchParams(filters);
+            const endpoint = `/history/export/csv?${params}`;
+            
+            console.log('🔗 Endpoint historique:', endpoint);
+            
+            const response = await this.request(endpoint);
+            return response;
+            
+        } catch (error) {
+            console.error('❌ Erreur export historique:', error);
+            throw new Error(`Erreur export historique: ${error.message}`);
+        }
+    }
+
+    // 🔥 MÉTHODES UTILITAIRES
+    static downloadBlob(blob, filename) {
+        try {
+            if (!blob || blob.size === 0) {
+                throw new Error('Fichier vide');
+            }
+            
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            link.style.display = 'none';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            setTimeout(() => {
+                window.URL.revokeObjectURL(url);
+            }, 100);
+            
+            console.log('✅ Téléchargement réussi:', filename);
+            
+        } catch (error) {
+            console.error('❌ Erreur téléchargement:', error);
+            throw error;
+        }
+    }
+
+    static getFilenameFromResponse(response) {
+        const contentDisposition = response.headers.get('content-disposition');
+        if (contentDisposition) {
+            const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+            if (filenameMatch) return filenameMatch[1];
+            
+            const filenameStarMatch = contentDisposition.match(/filename\*=UTF-8''(.+)/);
+            if (filenameStarMatch) return decodeURIComponent(filenameStarMatch[1]);
+        }
+        return null;
+    }
 
     static setToken(token) {
         this.token = token;
@@ -98,99 +410,92 @@ static async request(endpoint, options = {}) {
     }
 
     static async createArticle(articleData) {
-    // 🔥 VALIDATION RENFORCÉE côté API
-    const validationErrors = this.validateArticleData(articleData);
-    if (validationErrors.length > 0) {
-        throw new Error(`Données invalides: ${validationErrors.join(', ')}`);
-    }
-
-    // Vérifier l'existence des références
-    await this.validateReferences(articleData);
-
-    const validatedData = {
-        code: articleData.code.trim(),
-        name: articleData.name.trim(),
-        category_id: parseInt(articleData.category_id),
-        site_id: parseInt(articleData.site_id),
-        unit_id: parseInt(articleData.unit_id),
-        current_stock: parseFloat(articleData.current_stock),
-        alert_threshold: parseFloat(articleData.alert_threshold),
-        order_quantity: articleData.order_quantity || 10,
-        cost_price: articleData.cost_price || 0
-    };
-    
-    console.log('📦 Données article validées:', validatedData);
-    
-    return this.request('/articles', {
-        method: 'POST',
-        body: validatedData
-    });
-}
-
-// AJOUTER cette méthode dans ApiService
-static async validateReferences(articleData) {
-    try {
-        // Vérifier que la catégorie existe
-        const categories = await this.getCategories();
-        const categoryExists = categories.data.some(cat => cat.id === articleData.category_id);
-        if (!categoryExists) {
-            throw new Error('La catégorie sélectionnée n\'existe pas');
+        const validationErrors = this.validateArticleData(articleData);
+        if (validationErrors.length > 0) {
+            throw new Error(`Données invalides: ${validationErrors.join(', ')}`);
         }
 
-        // Vérifier que le site existe
-        const sites = await this.getSites();
-        const siteExists = sites.data.some(site => site.id === articleData.site_id);
-        if (!siteExists) {
-            throw new Error('Le site sélectionné n\'existe pas');
+        await this.validateReferences(articleData);
+
+        const validatedData = {
+            code: articleData.code.trim(),
+            name: articleData.name.trim(),
+            category_id: parseInt(articleData.category_id),
+            site_id: parseInt(articleData.site_id),
+            unit_id: parseInt(articleData.unit_id),
+            current_stock: parseFloat(articleData.current_stock),
+            alert_threshold: parseFloat(articleData.alert_threshold),
+            order_quantity: articleData.order_quantity || 10,
+            cost_price: articleData.cost_price || 0
+        };
+        
+        console.log('📦 Données article validées:', validatedData);
+        
+        return this.request('/articles', {
+            method: 'POST',
+            body: validatedData
+        });
+    }
+
+    static async validateReferences(articleData) {
+        try {
+            const categories = await this.getCategories();
+            const categoryExists = categories.data.some(cat => cat.id === articleData.category_id);
+            if (!categoryExists) {
+                throw new Error('La catégorie sélectionnée n\'existe pas');
+            }
+
+            const sites = await this.getSites();
+            const siteExists = sites.data.some(site => site.id === articleData.site_id);
+            if (!siteExists) {
+                throw new Error('Le site sélectionné n\'existe pas');
+            }
+
+            const units = await this.getUnits();
+            const unitExists = units.data.some(unit => unit.id === articleData.unit_id);
+            if (!unitExists) {
+                throw new Error('L\'unité sélectionnée n\'existe pas');
+            }
+
+        } catch (error) {
+            console.error('❌ Erreur validation références:', error);
+            throw new Error(`Erreur de validation: ${error.message}`);
+        }
+    }
+
+    static validateArticleData(articleData) {
+        const errors = [];
+
+        if (!articleData.code || articleData.code.trim().length === 0) {
+            errors.push('Code article requis');
         }
 
-        // Vérifier que l'unité existe
-        const units = await this.getUnits();
-        const unitExists = units.data.some(unit => unit.id === articleData.unit_id);
-        if (!unitExists) {
-            throw new Error('L\'unité sélectionnée n\'existe pas');
+        if (!articleData.name || articleData.name.trim().length === 0) {
+            errors.push('Nom article requis');
         }
 
-    } catch (error) {
-        console.error('❌ Erreur validation références:', error);
-        throw new Error(`Erreur de validation: ${error.message}`);
+        if (!articleData.category_id || isNaN(articleData.category_id)) {
+            errors.push('Catégorie invalide');
+        }
+
+        if (!articleData.site_id || isNaN(articleData.site_id)) {
+            errors.push('Site invalide');
+        }
+
+        if (!articleData.unit_id || isNaN(articleData.unit_id)) {
+            errors.push('Unité invalide');
+        }
+
+        if (isNaN(articleData.current_stock)) {
+            errors.push('Stock actuel invalide');
+        }
+
+        if (isNaN(articleData.alert_threshold)) {
+            errors.push('Seuil d\'alerte invalide');
+        }
+
+        return errors;
     }
-}
-
-// AJOUTER validation statique des données
-static validateArticleData(articleData) {
-    const errors = [];
-
-    if (!articleData.code || articleData.code.trim().length === 0) {
-        errors.push('Code article requis');
-    }
-
-    if (!articleData.name || articleData.name.trim().length === 0) {
-        errors.push('Nom article requis');
-    }
-
-    if (!articleData.category_id || isNaN(articleData.category_id)) {
-        errors.push('Catégorie invalide');
-    }
-
-    if (!articleData.site_id || isNaN(articleData.site_id)) {
-        errors.push('Site invalide');
-    }
-
-    if (!articleData.unit_id || isNaN(articleData.unit_id)) {
-        errors.push('Unité invalide');
-    }
-
-    if (isNaN(articleData.current_stock)) {
-        errors.push('Stock actuel invalide');
-    }
-
-    if (isNaN(articleData.alert_threshold)) {
-        errors.push('Seuil d\'alerte invalide');
-    }
-
-    return errors;
-}
 
     static async updateArticle(id, articleData) {
         const validatedData = {
@@ -221,37 +526,33 @@ static validateArticleData(articleData) {
         return this.request('/articles/stats');
     }
 
-    // Dans frontend/js/api.js - Méthode checkCodeUnique
-static async checkCodeUnique(code, excludeId = null) {
-    console.log('🔍 Vérification unicité code:', code, 'excludeId:', excludeId);
-    
-    // Éviter les appels inutiles
-    if (!code || code.trim() === '') {
-        return { data: { isUnique: true, existingArticle: null } };
-    }
+    static async checkCodeUnique(code, excludeId = null) {
+        console.log('🔍 Vérification unicité code:', code, 'excludeId:', excludeId);
+        
+        if (!code || code.trim() === '') {
+            return { data: { isUnique: true, existingArticle: null } };
+        }
 
-    const params = { code: code.trim() };
-    if (excludeId) params.excludeId = excludeId;
-    
-    const query = new URLSearchParams(params).toString();
-    
-    try {
-        const response = await this.request(`/articles/check/code?${query}`);
-        console.log('✅ Réponse vérification code:', response);
-        return response;
-    } catch (error) {
-        console.error('❌ Erreur vérification code:', error);
-        // En cas d'erreur, considérer comme unique pour ne pas bloquer
-        return { data: { isUnique: true, existingArticle: null } };
+        const params = { code: code.trim() };
+        if (excludeId) params.excludeId = excludeId;
+        
+        const query = new URLSearchParams(params).toString();
+        
+        try {
+            const response = await this.request(`/articles/check/code?${query}`);
+            console.log('✅ Réponse vérification code:', response);
+            return response;
+        } catch (error) {
+            console.error('❌ Erreur vérification code:', error);
+            return { data: { isUnique: true, existingArticle: null } };
+        }
     }
-}
 
     // ==================== HISTORIQUE ====================
     static async getMyHistory(filters = {}) {
         try {
             const params = new URLSearchParams();
             
-            // Ajouter tous les filtres
             Object.keys(filters).forEach(key => {
                 if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
                     params.append(key, filters[key]);
@@ -278,8 +579,7 @@ static async checkCodeUnique(code, excludeId = null) {
         }
     }
 
-
-    // ==================== RÉFÉRENCES - CATÉGORIES ====================
+    // ==================== RÉFÉRENCES ====================
     static async getCategories() {
         return this.request('/references/categories');
     }
@@ -310,7 +610,6 @@ static async checkCodeUnique(code, excludeId = null) {
 
     static async deleteCategory(id) {
         try {
-            // D'abord vérifier si la catégorie est utilisée
             const articlesResponse = await this.getArticles();
             const articles = articlesResponse.data || articlesResponse;
             const articlesUsingCategory = articles.filter(article => article.category_id == id);
@@ -328,7 +627,6 @@ static async checkCodeUnique(code, excludeId = null) {
         }
     }
 
-    // ==================== RÉFÉRENCES - SITES ====================
     static async getSites() {
         return this.request('/references/sites');
     }
@@ -363,7 +661,6 @@ static async checkCodeUnique(code, excludeId = null) {
         });
     }
 
-    // ==================== RÉFÉRENCES - UNITÉS ====================
     static async getUnits() {
         return this.request('/references/units');
     }
@@ -416,7 +713,6 @@ static async checkCodeUnique(code, excludeId = null) {
             password: userData.password
         };
         
-        // Vérifier que le mot de passe est fourni pour la création
         if (!validatedData.password) {
             throw new Error('Le mot de passe est requis pour créer un utilisateur');
         }
@@ -435,7 +731,6 @@ static async checkCodeUnique(code, excludeId = null) {
             role: userData.role
         };
         
-        // Ajouter le mot de passe seulement s'il est fourni
         if (userData.password) {
             validatedData.password = userData.password;
         }
@@ -452,9 +747,8 @@ static async checkCodeUnique(code, excludeId = null) {
         });
     }
 
-    // ==================== RÔLES (pour la démo) ====================
+    // ==================== RÔLES ====================
     static async getRoles() {
-        // Pour la démo, simuler une requête API
         return new Promise((resolve) => {
             setTimeout(() => {
                 const savedRoles = localStorage.getItem('customRoles');
@@ -495,7 +789,6 @@ static async checkCodeUnique(code, excludeId = null) {
     }
 
     static async createRole(roleData) {
-        // Pour la démo, sauvegarder dans localStorage
         return new Promise((resolve) => {
             setTimeout(() => {
                 const savedRoles = localStorage.getItem('customRoles');
@@ -512,7 +805,6 @@ static async checkCodeUnique(code, excludeId = null) {
     }
 
     static async updateRole(id, roleData) {
-        // Pour la démo, mettre à jour dans localStorage
         return new Promise((resolve) => {
             setTimeout(() => {
                 const savedRoles = localStorage.getItem('customRoles');
@@ -528,7 +820,21 @@ static async checkCodeUnique(code, excludeId = null) {
             }, 100);
         });
     }
-        static async getDailyStockHistory(filters = {}) {
+
+    static async deleteRole(id) {
+        return new Promise((resolve) => {
+            setTimeout(() => {
+                const savedRoles = localStorage.getItem('customRoles');
+                const roles = savedRoles ? JSON.parse(savedRoles) : [];
+                const filteredRoles = roles.filter(role => role.id != id);
+                localStorage.setItem('customRoles', JSON.stringify(filteredRoles));
+                resolve({ success: true });
+            }, 100);
+        });
+    }
+
+    // ==================== HISTORIQUE QUOTIDIEN ====================
+    static async getDailyStockHistory(filters = {}) {
         const query = new URLSearchParams(filters).toString();
         return this.request(`/history/daily-stock?${query}`);
     }
@@ -543,21 +849,7 @@ static async checkCodeUnique(code, excludeId = null) {
             method: 'POST'
         });
     }
-
-    static async deleteRole(id) {
-        // Pour la démo, supprimer de localStorage
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                const savedRoles = localStorage.getItem('customRoles');
-                const roles = savedRoles ? JSON.parse(savedRoles) : [];
-                const filteredRoles = roles.filter(role => role.id != id);
-                localStorage.setItem('customRoles', JSON.stringify(filteredRoles));
-                resolve({ success: true });
-            }, 100);
-        });
-    }
+    
 }
 
-
-
-console.log('✅ ApiService chargé avec méthodes historiques');
+console.log('✅ ApiService chargé avec exports PDF/CSV corrigés');

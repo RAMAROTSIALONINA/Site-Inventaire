@@ -40,6 +40,12 @@ class HistoryService {
     // Initialisation
     async init() {
         console.log('🚀 Initialisation HistoryService...');
+        
+        if (!ApiService.token) {
+            this.showNotification('❌ Veuillez vous reconnecter', 'error');
+            return;
+        }
+        
         await this.loadReferenceData();
         await this.renderHistory();
         this.setupEventListeners();
@@ -135,7 +141,7 @@ class HistoryService {
         };
     }
 
-    // 🔄 Afficher la vue activités ou inventaire
+    // Afficher la vue activités ou inventaire
     showView(viewType) {
         this.currentView = viewType;
         this.currentFilters.page = 1;
@@ -205,13 +211,29 @@ class HistoryService {
 
         } catch (error) {
             console.error(`❌ Erreur chargement ${this.currentView}:`, error);
+            
+            if (error.message.includes('401') || error.message.includes('non autorisé')) {
+                this.handleAuthError(error);
+            }
+            
             container.innerHTML = this.renderErrorState(error);
         } finally {
             this.isLoading = false;
         }
     }
 
-    // 🆕 GROUPER L'HISTORIQUE PAR DATE AVEC RECHERCHE
+    // Gestion des erreurs d'authentification
+    handleAuthError(error) {
+        console.error('🔐 Erreur d\'authentification:', error);
+        this.showNotification('🔐 Session expirée - Veuillez vous reconnecter', 'error');
+        
+        setTimeout(() => {
+            localStorage.removeItem('authToken');
+            window.location.href = '/login.html';
+        }, 2000);
+    }
+
+    // Grouper l'historique par date avec recherche
     groupHistoryByDate(history) {
         console.log('🔧 Début du groupement par date avec recherche...');
         
@@ -233,7 +255,7 @@ class HistoryService {
             }
 
             try {
-                // 🔍 FILTRER PAR RECHERCHE
+                // Filtrer par recherche
                 if (searchTerm) {
                     const searchableText = [
                         entry.description || '',
@@ -321,7 +343,7 @@ class HistoryService {
         `;
     }
 
-    // 📝 INTERFACE ACTIVITÉS AMÉLIORÉE
+    // Interface activités améliorée
     renderHistoryUI(history, pagination, stats) {
         console.log('🎨 Rendu interface historique avec recherche...');
         
@@ -372,7 +394,7 @@ class HistoryService {
 
                 ${stats ? this.renderQuickStats(stats) : ''}
 
-                <!-- Barre de recherche AMÉLIORÉE -->
+                <!-- Barre de recherche améliorée -->
                 <div class="search-container">
                     <div class="search-input-wrapper">
                         <input type="text" id="history-search" class="form-control search-input" 
@@ -404,7 +426,7 @@ class HistoryService {
         `;
     }
 
-    // 🆕 RENDU GROUPÉ PAR DATE
+    // Rendu groupé par date
     renderGroupedHistory() {
         console.log('🎨 Rendu groupé...');
         
@@ -465,7 +487,7 @@ class HistoryService {
         }
     }
 
-    // 🔄 ENTRÉE HISTORIQUE AVEC BOUTON SUPPRIMER
+    // Entrée historique avec bouton supprimer
     renderHistoryEntry(entry) {
         const formattedDate = new Date(entry.created_at).toLocaleString('fr-FR', {
             hour: '2-digit',
@@ -623,7 +645,7 @@ class HistoryService {
         `;
     }
 
-    // 🆕 FILTRES RAPIDES
+    // Filtres rapides
     filterToday() {
         const today = new Date().toISOString().split('T')[0];
         this.currentFilters.start_date = today;
@@ -662,7 +684,7 @@ class HistoryService {
         this.renderHistory();
     }
 
-    // 🆕 MÉTHODES DE SUPPRESSION
+    // Méthodes de suppression
     async confirmDeleteEntry(entryId) {
         if (confirm('Êtes-vous sûr de vouloir supprimer cette entrée d\'historique ? Cette action est irréversible.')) {
             await this.deleteHistoryEntry(entryId);
@@ -737,7 +759,7 @@ class HistoryService {
         });
     }
 
-    // 🆕 AFFICHAGE DÉTAILS ENTRÉE
+    // Affichage détails entrée
     async showEntryDetails(entryId) {
         try {
             const entry = this.findEntryById(entryId);
@@ -992,7 +1014,7 @@ class HistoryService {
         `;
     }
 
-    // 🏪 INTERFACE INVENTAIRE
+    // Interface inventaire
     renderInventoryUI(data) {
         if (!data || !data.inventory) {
             console.error('❌ Données d\'inventaire manquantes:', data);
@@ -1201,8 +1223,361 @@ class HistoryService {
             </tr>
         `;
     }
+    
 
-    // 🎯 MÉTHODES INVENTAIRE
+    // 🔥 MÉTHODES D'EXPORT CORRIGÉES
+    async exportInventoryPDF() {
+        try {
+            console.log('📊 Début export PDF...');
+            
+            this.showNotification('⏳ Génération du PDF en cours...', 'info');
+            
+            const validatedFilters = this.validateExportFilters(this.inventoryFilters);
+            console.log('📋 Filtres export PDF:', validatedFilters);
+            
+            const result = await ApiService.exportInventoryPDF(validatedFilters);
+            
+            if (result && result.success) {
+                const sizeInfo = result.blobSize ? ` (${result.blobSize} bytes)` : '';
+                this.showNotification(`✅ PDF généré avec succès${sizeInfo}`, 'success');
+            }
+            
+        } catch (error) {
+            console.error('❌ Erreur export PDF:', error);
+            this.showNotification(`❌ ${error.message}`, 'error');
+        }
+    }
+static async exportInventoryPDF(filters = {}) {
+    try {
+        console.log('📊 Demande d\'export PDF...');
+        
+        // 🔥 SOLUTION PROPRE : Détecter d'abord si le PDF est disponible
+        const pdfAvailable = await this.checkPDFAvailability();
+        
+        if (!pdfAvailable) {
+            // Si PDF non disponible, proposer directement les alternatives
+            return await this.offerExportAlternatives();
+        }
+        
+        // Si PDF disponible, procéder normalement
+        this.showNotification('⏳ Génération du PDF en cours...', 'info');
+        
+        const validatedFilters = this.validateExportFilters(this.inventoryFilters);
+        const result = await ApiService.exportInventoryPDF(validatedFilters);
+        
+        this.showNotification('✅ PDF généré avec succès', 'success');
+        return result;
+        
+    } catch (error) {
+        console.error('❌ Erreur export PDF:', error);
+        
+        // En cas d'erreur, basculer automatiquement vers CSV
+        this.showNotification('⚠️ PDF indisponible - Export CSV automatique', 'warning');
+        return await this.exportInventory();
+    }
+}
+
+// 🔥 VÉRIFIER DISPONIBILITÉ PDF
+static async checkPDFAvailability() {
+    try {
+        console.log('🔍 Vérification disponibilité PDF...');
+        
+        const testUrl = `${ApiService.baseURL}/history/inventory/export/pdf`;
+        const response = await fetch(testUrl, {
+            method: 'HEAD',
+            headers: {
+                'Authorization': `Bearer ${ApiService.token}`,
+            }
+        });
+        
+        const contentType = response.headers.get('content-type') || '';
+        const isRealPDF = contentType.includes('application/pdf');
+        const isHTML = contentType.includes('text/html');
+        
+        console.log('📊 Résultat vérification:', { 
+            status: response.status, 
+            contentType,
+            isRealPDF, 
+            isHTML 
+        });
+        
+        return isRealPDF && response.ok;
+        
+    } catch (error) {
+        console.log('❌ PDF non disponible:', error.message);
+        return false;
+    }
+}
+
+// 🔥 PROPOSER DES ALTERNATIVES
+static async offerExportAlternatives() {
+    return new Promise((resolve) => {
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-overlay" onclick="this.closest('.modal').remove(); resolve(null)"></div>
+            <div class="modal-dialog" style="max-width: 500px;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>📊 Options d'Export Disponibles</h3>
+                        <button class="modal-close" onclick="this.closest('.modal').remove(); resolve(null)">×</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-info">
+                            <strong>📋 Service PDF temporairement indisponible</strong>
+                            <p>Le format PDF n'est pas disponible pour le moment. Voici les alternatives :</p>
+                        </div>
+                        
+                        <div class="export-alternatives">
+                            <div class="alternative-option">
+                                <div class="alternative-icon">📄</div>
+                                <div class="alternative-content">
+                                    <h4>Export CSV (Recommandé)</h4>
+                                    <p>Format tableur compatible Excel, Google Sheets, LibreOffice</p>
+                                    <ul>
+                                        <li>✅ Toutes les données incluses</li>
+                                        <li>✅ Facile à analyser</li>
+                                        <li>✅ Compatible avec tous les logiciels</li>
+                                    </ul>
+                                </div>
+                                <button class="btn btn-primary" onclick="this.closest('.modal').remove(); historyService.exportInventory().then(r => resolve(r))">
+                                    Exporter CSV
+                                </button>
+                            </div>
+                            
+                            <div class="alternative-option">
+                                <div class="alternative-icon">🖨️</div>
+                                <div class="alternative-content">
+                                    <h4>Impression Directe</h4>
+                                    <p>Imprimer la liste actuelle des articles</p>
+                                    <ul>
+                                        <li>✅ Format papier</li>
+                                        <li>✅ Rapide et simple</li>
+                                        <li>✅ Idéal pour archivage</li>
+                                    </ul>
+                                </div>
+                                <button class="btn btn-secondary" onclick="this.closest('.modal').remove(); window.print(); resolve(null)">
+                                    Imprimer
+                                </button>
+                            </div>
+                            
+                            <div class="alternative-option">
+                                <div class="alternative-icon">👨‍💼</div>
+                                <div class="alternative-content">
+                                    <h4>Contacter l'Administrateur</h4>
+                                    <p>Signaler le problème du service PDF</p>
+                                </div>
+                                <button class="btn btn-outline" onclick="this.closest('.modal').remove(); historyService.contactAdmin(); resolve(null)">
+                                    Signaler
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" onclick="this.closest('.modal').remove(); resolve(null)">
+                            Annuler
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+    });
+}
+
+// 🔥 METHODE POUR CONTACTER L'ADMIN
+static contactAdmin() {
+    const subject = "Problème avec l'export PDF";
+    const body = `Bonjour,\n\nL'export PDF de l'inventaire n'est pas disponible.\n\nDate: ${new Date().toLocaleDateString()}\nPage: ${window.location.href}`;
+    
+    const mailtoLink = `mailto:admin@entreprise.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    
+    if (confirm('Ouvrir votre client email pour signaler le problème ?')) {
+        window.location.href = mailtoLink;
+    }
+}
+
+// 🔥 MODAL DE CHOIX POUR L'UTILISATEUR
+static showExportChoiceModal() {
+    return new Promise((resolve) => {
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-overlay" onclick="this.closest('.modal').remove(); resolve('cancel')"></div>
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>📊 Options d'Export</h3>
+                        <button class="modal-close" onclick="this.closest('.modal').remove(); resolve('cancel')">×</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="export-options">
+                            <div class="export-option">
+                                <div class="option-icon">📄</div>
+                                <div class="option-info">
+                                    <h4>Export CSV</h4>
+                                    <p>Format tableur compatible Excel</p>
+                                </div>
+                                <button class="btn btn-primary" onclick="this.closest('.modal').remove(); resolve('csv')">
+                                    Choisir
+                                </button>
+                            </div>
+                            
+                            <div class="export-option">
+                                <div class="option-icon">🖨️</div>
+                                <div class="option-info">
+                                    <h4>Impression</h4>
+                                    <p>Imprimer directement la page</p>
+                                </div>
+                                <button class="btn btn-secondary" onclick="this.closest('.modal').remove(); resolve('print')">
+                                    Choisir
+                                </button>
+                            </div>
+                            
+                            <div class="export-option">
+                                <div class="option-icon">📊</div>
+                                <div class="option-info">
+                                    <h4>Export PDF (Expérimental)</h4>
+                                    <p class="text-warning">Service temporairement indisponible</p>
+                                </div>
+                                <button class="btn btn-outline" disabled>
+                                    Indisponible
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+    });
+}
+
+// 🔥 TESTER SI L'ENDPOINT PDF EXISTE
+static async testPDFEndpoint() {
+    try {
+        const testUrl = `${ApiService.baseURL}/history/inventory/export/pdf`;
+        console.log('🔍 Test endpoint PDF:', testUrl);
+        
+        const response = await fetch(testUrl, {
+            headers: {
+                'Authorization': `Bearer ${ApiService.token}`,
+            }
+        });
+        
+        const content = await response.text();
+        
+        // Analyser la réponse
+        if (content.startsWith('%PDF')) {
+            return { exists: true, type: 'PDF' };
+        } else if (content.startsWith('<')) {
+            // C'est du HTML - endpoint n'existe pas ou erreur
+            if (content.includes('404') || content.includes('Not Found')) {
+                return { 
+                    exists: false, 
+                    error: 'L\'endpoint PDF n\'existe pas sur le serveur (404)' 
+                };
+            } else {
+                return { 
+                    exists: false, 
+                    error: 'Le serveur retourne une page HTML au lieu d\'un PDF' 
+                };
+            }
+        } else {
+            return { exists: false, error: 'Format de réponse inconnu' };
+        }
+        
+    } catch (error) {
+        return { 
+            exists: false, 
+            error: `Erreur de connexion: ${error.message}` 
+        };
+    }
+}
+
+// 🔥 NOTIFICATION AVEC ACTIONS
+static showNotificationWithActions(message, type = 'info', actions = []) {
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type} notification-with-actions`;
+    
+    let actionsHTML = '';
+    if (actions.length > 0) {
+        actionsHTML = `
+            <div class="notification-actions">
+                ${actions.map(action => 
+                    `<button class="btn btn-sm" onclick="(${action.action})()">${action.text}</button>`
+                ).join('')}
+            </div>
+        `;
+    }
+    
+    notification.innerHTML = `
+        <div class="notification-content">
+            <span class="notification-message">${message}</span>
+            ${actionsHTML}
+            <button class="notification-close" onclick="this.parentElement.parentElement.remove()">×</button>
+        </div>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        if (notification.parentElement) {
+            notification.remove();
+        }
+    }, 8000);
+}
+    async exportInventory() {
+        try {
+            console.log('📄 Début export CSV...');
+            
+            this.showNotification('⏳ Génération du CSV en cours...', 'info');
+            
+            const validatedFilters = this.validateExportFilters(this.inventoryFilters);
+            await ApiService.exportInventoryCSV(validatedFilters);
+            
+            this.showNotification('✅ CSV généré avec succès', 'success');
+            
+        } catch (error) {
+            console.error('❌ Erreur export CSV:', error);
+            this.showNotification(`❌ Erreur lors de l'export CSV: ${error.message}`, 'error');
+        }
+    }
+
+    async exportHistory() {
+        try {
+            console.log('📋 Début export historique CSV...');
+            
+            this.showNotification('⏳ Génération de l\'historique CSV en cours...', 'info');
+            
+            const validatedFilters = this.validateExportFilters(this.currentFilters);
+            await ApiService.exportHistoryCSV(validatedFilters);
+            
+            this.showNotification('✅ Historique CSV généré avec succès', 'success');
+            
+        } catch (error) {
+            console.error('❌ Erreur export historique:', error);
+            this.showNotification(`❌ Erreur lors de l'export historique: ${error.message}`, 'error');
+        }
+    }
+
+    // Validation des filtres
+    validateExportFilters(filters) {
+        const validated = {};
+        
+        Object.keys(filters).forEach(key => {
+            const value = filters[key];
+            if (value !== undefined && value !== null && value !== '') {
+                validated[key] = typeof value === 'boolean' ? value.toString() : value;
+            }
+        });
+        
+        return validated;
+    }
+
+    // Méthodes inventaire
     async applyInventoryFilters() {
         this.inventoryFilters.date = document.getElementById('inventory-date').value;
         this.inventoryFilters.site_id = document.getElementById('inventory-site').value;
@@ -1222,74 +1597,7 @@ class HistoryService {
         this.renderHistory();
     }
 
-    // 📄 MÉTHODES D'EXPORT CORRIGÉES
-    async exportInventory() {
-        try {
-            console.log('📄 Début export CSV inventaire...');
-            
-            const params = new URLSearchParams(this.inventoryFilters);
-            const url = `${ApiService.baseURL}/history/inventory/export/csv?${params}`;
-            console.log('🔗 URL export CSV:', url);
-            
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `inventaire_${this.inventoryFilters.date || new Date().toISOString().split('T')[0]}.csv`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            this.showNotification('📄 Export CSV généré avec succès', 'success');
-            
-        } catch (error) {
-            console.error('❌ Erreur export CSV:', error);
-            this.showNotification('❌ Erreur lors de l\'export CSV: ' + error.message, 'error');
-        }
-    }
-
-    async exportInventoryPDF() {
-        try {
-            console.log('📄 Début export PDF inventaire...');
-            
-            const params = new URLSearchParams(this.inventoryFilters);
-            const url = `${ApiService.baseURL}/history/inventory/export/pdf?${params}`;
-            
-            console.log('🔗 URL export PDF:', url);
-            
-            window.open(url, '_blank');
-            
-            this.showNotification('📊 Export PDF généré avec succès', 'success');
-            
-        } catch (error) {
-            console.error('❌ Erreur export PDF:', error);
-            this.showNotification('❌ Erreur lors de l\'export PDF: ' + error.message, 'error');
-        }
-    }
-
-    async exportHistory() {
-        try {
-            console.log('📄 Début export historique activités...');
-            
-            const params = new URLSearchParams(this.currentFilters);
-            const url = `${ApiService.baseURL}/history/export/csv?${params}`;
-            
-            console.log('🔗 URL export historique:', url);
-            
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `historique_${new Date().toISOString().split('T')[0]}.csv`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            this.showNotification('📄 Export historique CSV généré avec succès', 'success');
-            
-        } catch (error) {
-            console.error('❌ Erreur export historique:', error);
-            this.showNotification('❌ Erreur lors de l\'export historique: ' + error.message, 'error');
-        }
-    }
-
-    // MÉTHODES EXISTANTES
+    // Méthodes existantes
     attachEvents() {
         const searchInput = document.getElementById('history-search');
         if (searchInput) {
@@ -1473,7 +1781,7 @@ class HistoryService {
         this.showModal('Comparaison d\'inventaire', modalContent);
     }
 
-    // 🛠️ UTILITAIRES
+    // Utilitaires
     getStatusClass(status) {
         const classes = {
             'OK': 'status-ok',
@@ -1574,168 +1882,6 @@ class HistoryService {
         return String(value);
     }
 
-    // Dans frontend/js/history.js - CORRECTION DES MODALS
-
-// Utilitaires d'interface CORRIGÉS
-showModal(title, content, modalClass = 'history-modal') {
-    // Fermer les modals existants
-    this.closeAllModals();
-    
-    const modal = document.createElement('div');
-    modal.className = `modal ${modalClass}`;
-    modal.innerHTML = `
-        <div class="modal-overlay" onclick="historyService.closeModal(this)"></div>
-        <div class="modal-dialog">
-            <div class="modal-content">
-                ${content}
-            </div>
-        </div>
-    `;
-    document.body.appendChild(modal);
-    
-    // Empêcher la propagation des événements
-    const modalContent = modal.querySelector('.modal-content');
-    modalContent.addEventListener('click', (e) => {
-        e.stopPropagation();
-    });
-}
-
-closeModal(overlay) {
-    const modal = overlay.closest('.modal');
-    if (modal) {
-        modal.remove();
-    }
-}
-
-closeAllModals() {
-    const modals = document.querySelectorAll('.modal');
-    modals.forEach(modal => modal.remove());
-}
-
-// 🆕 MÉTHODE SPÉCIFIQUE POUR LES MODALS DE DÉTAILS
-showEntryDetailsModal(entry) {
-    const formattedDate = new Date(entry.created_at).toLocaleString('fr-FR', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-    });
-
-    const modalContent = `
-        <div class="modal-header">
-            <h3>📋 Détails de l'activité</h3>
-            <button class="modal-close" onclick="historyService.closeModal(this.closest('.modal-overlay'))">×</button>
-        </div>
-        <div class="modal-body">
-            <div class="detail-section">
-                <h4>Informations générales</h4>
-                <div class="detail-grid">
-                    <div class="detail-item">
-                        <label>Description:</label>
-                        <span>${entry.description}</span>
-                    </div>
-                    <div class="detail-item">
-                        <label>Date et heure:</label>
-                        <span>${formattedDate}</span>
-                    </div>
-                    <div class="detail-item">
-                        <label>Utilisateur:</label>
-                        <span>${entry.full_name || entry.username || 'N/A'}</span>
-                    </div>
-                    <div class="detail-item">
-                        <label>Entité:</label>
-                        <span class="badge badge-entity">${this.getEntityText(entry.entity)}</span>
-                    </div>
-                    <div class="detail-item">
-                        <label>Action:</label>
-                        <span class="badge badge-action badge-${entry.action.toLowerCase()}">
-                            ${this.getActionText(entry.action)}
-                        </span>
-                    </div>
-                    ${entry.entity_id ? `
-                    <div class="detail-item">
-                        <label>ID Entité:</label>
-                        <span>${entry.entity_id}</span>
-                    </div>
-                    ` : ''}
-                </div>
-            </div>
-            
-            ${this.renderChanges(entry.changes, true)}
-            
-            <div class="modal-actions">
-                <button onclick="historyService.confirmDeleteEntry(${entry.id})" class="btn btn-danger">
-                    🗑️ Supprimer cette entrée
-                </button>
-                <button onclick="historyService.closeModal(this.closest('.modal-overlay'))" class="btn btn-secondary">
-                    Fermer
-                </button>
-            </div>
-        </div>
-    `;
-    
-    this.showModal('Détails de l\'activité', modalContent, 'history-modal details-modal');
-}
-
-// 🆕 MÉTHODE POUR LES MODALS DE COMPARAISON
-showComparisonModal(data) {
-    const modalContent = `
-        <div class="modal-header">
-            <h3>🔄 Comparaison: ${data.date1} vs ${data.date2}</h3>
-            <button class="modal-close" onclick="historyService.closeModal(this.closest('.modal-overlay'))">×</button>
-        </div>
-        <div class="modal-body">
-            <div class="comparison-stats">
-                <div class="stat-card">
-                    <div class="stat-value">${data.statistics.increased_stock}</div>
-                    <div class="stat-label">📈 Augmentations</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">${data.statistics.decreased_stock}</div>
-                    <div class="stat-label">📉 Diminutions</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">${data.statistics.unchanged_stock}</div>
-                    <div class="stat-label">➡️ Inchangés</div>
-                </div>
-            </div>
-            <div class="comparison-table">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Article</th>
-                            <th>Stock ${data.date1}</th>
-                            <th>Stock ${data.date2}</th>
-                            <th>Variation</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${data.comparison.map(item => `
-                            <tr>
-                                <td>${item.name} (${item.code})</td>
-                                <td>${item.stock_date1}</td>
-                                <td>${item.stock_date2}</td>
-                                <td class="${item.stock_variation > 0 ? 'positive' : item.stock_variation < 0 ? 'negative' : ''}">
-                                    ${item.stock_variation > 0 ? '+' : ''}${item.stock_variation}
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
-            <div class="modal-actions">
-                <button onclick="historyService.closeModal(this.closest('.modal-overlay'))" class="btn btn-primary">
-                    Fermer
-                </button>
-            </div>
-        </div>
-    `;
-    
-    this.showModal('Comparaison d\'inventaire', modalContent, 'history-modal comparison-modal');
-}
     // Utilitaires d'interface
     showModal(title, content) {
         const modal = document.createElement('div');
@@ -1771,7 +1917,7 @@ showComparisonModal(data) {
 }
 
 // Instance globale
-console.log('🚀 HistoryService complet chargé !');
+console.log('🚀 HistoryService complet chargé avec exports PDF/CSV corrigés !');
 const historyService = new HistoryService();
 
 // Initialiser au chargement de la page
