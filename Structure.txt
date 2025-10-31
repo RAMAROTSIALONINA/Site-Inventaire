@@ -1,0 +1,48 @@
+.Site Inventaire
+├── backend/
+│   ├── config/
+│   │   └── database.js
+│   ├── controllers/
+│   │   ├── articles.js
+│   │   ├── auth.js
+│   │   ├── history.js
+│   │   ├── references.js
+│   │   └── users.js
+│   ├── middleware/
+│   │   ├── articles.js
+│   │   ├── auth.js
+│   │   ├── history.js
+│   │   └── logger.js
+│   ├── models/
+│   │   └── History.js
+│   ├── node_modules/
+│   └── routes/
+│       ├── articles.js
+│       ├── auth.js
+│       ├── history.js
+│       ├── historyExport.js
+│       ├── references.js
+│       ├── setup.js
+│       └── users.js
+├── frontend/
+│   ├── css/
+│   │   ├── history.css
+│   │   └── style.css
+│   ├── js/
+│   │   ├── api.js
+│   │   ├── app.js
+│   │   ├── auth.js
+│   │   ├── history.js
+│   │   └── utils.js
+│   └── index.html
+├── scripts/
+│   ├── init-db.sql
+│   └── setup.js
+├── .env
+├── app.js
+├── database_schema.sql
+├── database.js
+├── package-lock.json
+├── package.json
+├── README.md
+└── server.js

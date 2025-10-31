@@ -84,6 +84,71 @@ CREATE TABLE IF NOT EXISTS stock_movements (
     reason VARCHAR(200),
     movement_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+-- Tables pour les fournisseurs, livraisons et fiches techniques
+
+-- Table des fournisseurs
+CREATE TABLE IF NOT EXISTS suppliers (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    code VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    contact VARCHAR(255),
+    phone VARCHAR(50),
+    email VARCHAR(255),
+    address TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Table des livraisons
+CREATE TABLE IF NOT EXISTS deliveries (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    delivery_number VARCHAR(100) UNIQUE NOT NULL,
+    supplier_id INT NOT NULL,
+    delivery_date DATE NOT NULL,
+    reference VARCHAR(255),
+    status ENUM('pending', 'delivered', 'cancelled') DEFAULT 'pending',
+    total_amount DECIMAL(15,2) DEFAULT 0,
+    created_by INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE RESTRICT,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- Table des articles dans les livraisons
+CREATE TABLE IF NOT EXISTS delivery_items (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    delivery_id INT NOT NULL,
+    article_id INT NOT NULL,
+    quantity DECIMAL(15,3) NOT NULL,
+    unit_price DECIMAL(15,2) NOT NULL,
+    total_price DECIMAL(15,2) AS (quantity * unit_price) STORED,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (delivery_id) REFERENCES deliveries(id) ON DELETE CASCADE,
+    FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE RESTRICT
+);
+
+-- Table des fiches techniques
+CREATE TABLE IF NOT EXISTS technical_sheets (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    article_id INT NOT NULL,
+    reference VARCHAR(255),
+    specifications TEXT,
+    document_path VARCHAR(500),
+    created_by INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+    UNIQUE KEY unique_article (article_id)
+);
+
+-- Index pour améliorer les performances
+CREATE INDEX idx_deliveries_supplier_id ON deliveries(supplier_id);
+CREATE INDEX idx_deliveries_date ON deliveries(delivery_date);
+CREATE INDEX idx_delivery_items_delivery_id ON delivery_items(delivery_id);
+CREATE INDEX idx_delivery_items_article_id ON delivery_items(article_id);
+CREATE INDEX idx_technical_sheets_article_id ON technical_sheets(article_id);
 
 -- DONNEES INITIALES
 

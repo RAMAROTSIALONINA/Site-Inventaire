@@ -849,6 +849,128 @@ static analyzeHTMLResponse(html, url) {
             method: 'POST'
         });
     }
+        // ==================== FOURNISSEURS ====================
+    static async getSuppliers() {
+        return this.request('/suppliers');
+    }
+
+    static async createSupplier(supplierData) {
+        const validatedData = {
+            code: supplierData.code,
+            name: supplierData.name,
+            contact: supplierData.contact || '',
+            phone: supplierData.phone || '',
+            email: supplierData.email || '',
+            address: supplierData.address || ''
+        };
+        
+        return this.request('/suppliers', {
+            method: 'POST',
+            body: validatedData
+        });
+    }
+
+    static async updateSupplier(id, supplierData) {
+        const validatedData = {
+            code: supplierData.code,
+            name: supplierData.name,
+            contact: supplierData.contact || '',
+            phone: supplierData.phone || '',
+            email: supplierData.email || '',
+            address: supplierData.address || ''
+        };
+        
+        return this.request(`/suppliers/${id}`, {
+            method: 'PUT',
+            body: validatedData
+        });
+    }
+
+    static async deleteSupplier(id) {
+        return this.request(`/suppliers/${id}`, {
+            method: 'DELETE'
+        });
+    }
+
+    // ==================== LIVRAISONS ====================
+    static async getDeliveries() {
+        return this.request('/deliveries');
+    }
+
+    static async createDelivery(deliveryData) {
+        const validatedData = {
+            supplier_id: parseInt(deliveryData.supplier_id),
+            delivery_date: deliveryData.delivery_date,
+            reference: deliveryData.reference || '',
+            items: deliveryData.items.map(item => ({
+                article_id: parseInt(item.article_id),
+                quantity: parseFloat(item.quantity),
+                unit_price: parseFloat(item.unit_price)
+            }))
+        };
+        
+        return this.request('/deliveries', {
+            method: 'POST',
+            body: validatedData
+        });
+    }
+
+    static async updateDelivery(id, deliveryData) {
+        const validatedData = {
+            supplier_id: parseInt(deliveryData.supplier_id),
+            delivery_date: deliveryData.delivery_date,
+            reference: deliveryData.reference || '',
+            items: deliveryData.items.map(item => ({
+                article_id: parseInt(item.article_id),
+                quantity: parseFloat(item.quantity),
+                unit_price: parseFloat(item.unit_price)
+            }))
+        };
+        
+        return this.request(`/deliveries/${id}`, {
+            method: 'PUT',
+            body: validatedData
+        });
+    }
+
+    static async deleteDelivery(id) {
+        return this.request(`/deliveries/${id}`, {
+            method: 'DELETE'
+        });
+    }
+
+    static async getDeliveryDetails(id) {
+        return this.request(`/deliveries/${id}`);
+    }
+
+    // ==================== FICHES TECHNIQUES ====================
+    static async getTechnicalSheets() {
+        return this.request('/technical-sheets');
+    }
+
+    static async createTechnicalSheet(formData) {
+        return this.request('/technical-sheets', {
+            method: 'POST',
+            body: formData
+        });
+    }
+
+    static async updateTechnicalSheet(id, formData) {
+        return this.request(`/technical-sheets/${id}`, {
+            method: 'PUT',
+            body: formData
+        });
+    }
+
+    static async deleteTechnicalSheet(id) {
+        return this.request(`/technical-sheets/${id}`, {
+            method: 'DELETE'
+        });
+    }
+
+    static async getTechnicalSheetDetails(id) {
+        return this.request(`/technical-sheets/${id}`);
+    }
     
 }
 

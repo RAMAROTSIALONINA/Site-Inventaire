@@ -512,6 +512,7 @@ app.post('/api/auth/login', async (req, res) => {
         console.error('Erreur POST /api/auth/login:', error);
         res.status(500).json({ error: 'Erreur serveur' });
     }
+    
 });
 
 // Démarrer le serveur

@@ -587,3 +587,99 @@ tbody tr:hover {
     font-size: 14px;
     cursor: pointer;
 }
+/* Styles pour les nouveaux onglets */
+.status-badge.status-pending { background: #fff3cd; color: #856404; }
+.status-badge.status-delivered { background: #d1ecf1; color: #0c5460; }
+.status-badge.status-cancelled { background: #f8d7da; color: #721c24; }
+
+/* Styles pour les éléments de livraison */
+.delivery-item {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 5px;
+    align-items: end;
+}
+
+.delivery-item select,
+.delivery-item input {
+    flex: 1;
+}
+
+.remove-item {
+    background: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    padding: 8px 12px;
+    cursor: pointer;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .delivery-item {
+        flex-direction: column;
+    }
+    
+    .references-tabs {
+        flex-wrap: wrap;
+    }
+    
+    .ref-tab {
+        flex: 1;
+        min-width: 120px;
+        text-align: center;
+    }
+}
+/* Styles pour les éléments de livraison */
+.delivery-item {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 5px;
+    align-items: end;
+}
+
+.delivery-item select,
+.delivery-item input {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.remove-item {
+    background: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    padding: 8px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.remove-item:hover {
+    background: #c82333;
+}
+
+/* Badges de statut supplémentaires */
+.status-badge.status-pending { 
+    background: #fff3cd; 
+    color: #856404; 
+}
+
+.status-badge.status-delivered { 
+    background: #d1ecf1; 
+    color: #0c5460; 
+}
+
+.status-badge.status-cancelled { 
+    background: #f8d7da; 
+    color: #721c24; 
+}

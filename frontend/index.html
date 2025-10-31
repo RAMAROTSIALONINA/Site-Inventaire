@@ -60,6 +60,16 @@
                 <button class="tab" onclick="showTab('history')" role="tab" aria-selected="false" aria-controls="history">
                     <i class="fas fa-history" aria-hidden="true"></i> Historique
                 </button>
+                <!-- Dans la section des onglets, après l'onglet Références -->
+                <button class="tab" onclick="showTab('suppliers')" role="tab" aria-selected="false" aria-controls="suppliers">
+                    <i class="fas fa-truck" aria-hidden="true"></i> Fournisseurs
+                </button>
+                <button class="tab" onclick="showTab('deliveries')" role="tab" aria-selected="false" aria-controls="deliveries">
+                    <i class="fas fa-shipping-fast" aria-hidden="true"></i> Livraisons
+                </button>
+                <button class="tab" onclick="showTab('technical-sheets')" role="tab" aria-selected="false" aria-controls="technical-sheets">
+                    <i class="fas fa-file-alt" aria-hidden="true"></i> Fiches Techniques
+                </button>
             </nav>
 
             <!-- Dashboard -->
@@ -541,6 +551,216 @@
             </form>
         </div>
     </div>
+    <!-- Fournisseurs -->
+<div id="suppliers" class="tab-content" role="tabpanel" aria-labelledby="suppliers-tab">
+    <div class="section-header">
+        <h2>Gestion des Fournisseurs</h2>
+        <button class="btn btn-primary" onclick="showSupplierModal()" data-role="reference">
+            <i class="fas fa-plus" aria-hidden="true"></i> Nouveau Fournisseur
+        </button>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th scope="col">Code</th>
+                    <th scope="col">Nom</th>
+                    <th scope="col">Contact</th>
+                    <th scope="col">Téléphone</th>
+                    <th scope="col">Email</th>
+                    <th scope="col">Adresse</th>
+                    <th scope="col">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="suppliers-table"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Livraisons -->
+<div id="deliveries" class="tab-content" role="tabpanel" aria-labelledby="deliveries-tab">
+    <div class="section-header">
+        <h2>Gestion des Livraisons</h2>
+        <button class="btn btn-primary" onclick="showDeliveryModal()" data-role="manager-plus">
+            <i class="fas fa-plus" aria-hidden="true"></i> Nouvelle Livraison
+        </button>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th scope="col">N° Livraison</th>
+                    <th scope="col">Fournisseur</th>
+                    <th scope="col">Date</th>
+                    <th scope="col">Articles</th>
+                    <th scope="col">Statut</th>
+                    <th scope="col">Montant</th>
+                    <th scope="col">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="deliveries-table"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Fiches Techniques -->
+<div id="technical-sheets" class="tab-content" role="tabpanel" aria-labelledby="technical-sheets-tab">
+    <div class="section-header">
+        <h2>Fiches Techniques des Articles</h2>
+        <button class="btn btn-primary" onclick="showTechnicalSheetModal()" data-role="reference">
+            <i class="fas fa-plus" aria-hidden="true"></i> Nouvelle Fiche
+        </button>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th scope="col">Article</th>
+                    <th scope="col">Référence</th>
+                    <th scope="col">Spécifications</th>
+                    <th scope="col">Dernière mise à jour</th>
+                    <th scope="col">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="technical-sheets-table"></tbody>
+        </table>
+    </div>
+</div>
+<!-- Modal Fournisseur -->
+<div id="supplier-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="supplier-modal-title">Nouveau Fournisseur</h3>
+            <span class="close" onclick="closeSupplierModal()" aria-label="Fermer">&times;</span>
+        </div>
+        <form id="supplier-form" onsubmit="saveSupplier(event)">
+            <input type="hidden" id="edit-supplier-id">
+            
+            <div class="form-group">
+                <label for="supplier-code">Code *</label>
+                <input type="text" id="supplier-code" required>
+            </div>
+
+            <div class="form-group">
+                <label for="supplier-name">Nom *</label>
+                <input type="text" id="supplier-name" required>
+            </div>
+
+            <div class="form-group">
+                <label for="supplier-contact">Personne de contact</label>
+                <input type="text" id="supplier-contact">
+            </div>
+
+            <div class="form-group">
+                <label for="supplier-phone">Téléphone</label>
+                <input type="tel" id="supplier-phone">
+            </div>
+
+            <div class="form-group">
+                <label for="supplier-email">Email</label>
+                <input type="email" id="supplier-email">
+            </div>
+
+            <div class="form-group">
+                <label for="supplier-address">Adresse</label>
+                <textarea id="supplier-address" rows="3"></textarea>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeSupplierModal()">Annuler</button>
+                <button type="submit" class="btn btn-primary">Enregistrer</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Livraison -->
+<div id="delivery-modal" class="modal">
+    <div class="modal-content" style="max-width: 700px;">
+        <div class="modal-header">
+            <h3 id="delivery-modal-title">Nouvelle Livraison</h3>
+            <span class="close" onclick="closeDeliveryModal()" aria-label="Fermer">&times;</span>
+        </div>
+        <form id="delivery-form" onsubmit="saveDelivery(event)">
+            <input type="hidden" id="edit-delivery-id">
+            
+            <div class="form-group">
+                <label for="delivery-supplier">Fournisseur *</label>
+                <select id="delivery-supplier" required>
+                    <option value="">Choisir...</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="delivery-date">Date de livraison *</label>
+                <input type="date" id="delivery-date" required>
+            </div>
+
+            <div class="form-group">
+                <label for="delivery-reference">Référence commande</label>
+                <input type="text" id="delivery-reference">
+            </div>
+
+            <div class="form-group">
+                <label>Articles livrés</label>
+                <div id="delivery-items">
+                    <!-- Les articles seront ajoutés dynamiquement -->
+                </div>
+                <button type="button" class="btn btn-sm" onclick="addDeliveryItem()">
+                    <i class="fas fa-plus"></i> Ajouter un article
+                </button>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeDeliveryModal()">Annuler</button>
+                <button type="submit" class="btn btn-primary">Enregistrer la livraison</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Fiche Technique -->
+<div id="technical-sheet-modal" class="modal">
+    <div class="modal-content" style="max-width: 800px;">
+        <div class="modal-header">
+            <h3 id="technical-sheet-modal-title">Nouvelle Fiche Technique</h3>
+            <span class="close" onclick="closeTechnicalSheetModal()" aria-label="Fermer">&times;</span>
+        </div>
+        <form id="technical-sheet-form" onsubmit="saveTechnicalSheet(event)">
+            <input type="hidden" id="edit-technical-sheet-id">
+            
+            <div class="form-group">
+                <label for="technical-sheet-article">Article *</label>
+                <select id="technical-sheet-article" required>
+                    <option value="">Choisir...</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="technical-sheet-reference">Référence technique</label>
+                <input type="text" id="technical-sheet-reference">
+            </div>
+
+            <div class="form-group">
+                <label for="technical-sheet-specifications">Spécifications techniques</label>
+                <textarea id="technical-sheet-specifications" rows="6" placeholder="Décrire les caractéristiques techniques, dimensions, matériaux, etc."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="technical-sheet-document">Document joint</label>
+                <input type="file" id="technical-sheet-document" accept=".pdf,.doc,.docx,.jpg,.png">
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeTechnicalSheetModal()">Annuler</button>
+                <button type="submit" class="btn btn-primary">Enregistrer la fiche</button>
+            </div>
+        </form>
+    </div>
+</div>
 
     <script src="js/utils.js"></script>
     <script src="js/api.js"></script>

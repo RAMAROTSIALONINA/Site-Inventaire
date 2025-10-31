@@ -11,6 +11,11 @@ class App {
         this.unitsList = [];
         this.users = [];
         this.roles = [];
+        this.suppliers = [];
+        this.deliveries = [];
+        this.technicalSheets = [];
+        this.deliveryItems = []; // Pour gérer les articles dans les livraisons
+
         
         this.init();
     }
@@ -1619,6 +1624,577 @@ async loadHistory() {
         this.renderSites();
         this.renderUnits();
     }
+        // === FONCTIONS FOURNISSEURS ===
+    async loadSuppliers() {
+        try {
+            const response = await ApiService.getSuppliers();
+            this.suppliers = response.data || response;
+            this.renderSuppliersTable();
+        } catch (error) {
+            console.error('Erreur chargement fournisseurs:', error);
+            Utils.showMessage('Erreur lors du chargement des fournisseurs', 'error');
+        }
+    }
+
+    renderSuppliersTable() {
+        const container = document.getElementById('suppliers-table');
+        if (!container) return;
+        
+        if (!this.suppliers || this.suppliers.length === 0) {
+            container.innerHTML = '<tr><td colspan="7" class="no-data">Aucun fournisseur</td></tr>';
+            return;
+        }
+
+        container.innerHTML = this.suppliers.map(supplier => {
+            const userRole = this.currentUser?.role || 'user';
+            const customRole = this.roles.find(r => r.name === userRole);
+            const permissions = customRole ? customRole.permissions : [];
+            const canEdit = userRole === 'admin' || userRole === 'manager' || userRole === 'reference' || permissions.includes('references');
+
+            const actionButtons = !canEdit ? 
+                '<td><em>Lecture seule</em></td>' :
+                `
+                <td>
+                    <button class="btn btn-sm" onclick="app.editSupplier(${supplier.id})">Modifier</button>
+                    <button class="btn btn-sm btn-danger" onclick="app.deleteSupplier(${supplier.id})">Supprimer</button>
+                </td>
+                `;
+
+            return `
+                <tr>
+                    <td>${Utils.escapeHtml(supplier.code)}</td>
+                    <td>${Utils.escapeHtml(supplier.name)}</td>
+                    <td>${Utils.escapeHtml(supplier.contact || '-')}</td>
+                    <td>${Utils.escapeHtml(supplier.phone || '-')}</td>
+                    <td>${Utils.escapeHtml(supplier.email || '-')}</td>
+                    <td>${Utils.escapeHtml(supplier.address || '-')}</td>
+                    ${actionButtons}
+                </tr>
+            `;
+        }).join('');
+    }
+
+    showSupplierModal(supplierId = null) {
+        const userRole = this.currentUser?.role || 'user';
+        const customRole = this.roles.find(r => r.name === userRole);
+        const permissions = customRole ? customRole.permissions : [];
+        const canEdit = userRole === 'admin' || userRole === 'manager' || userRole === 'reference' || permissions.includes('references');
+
+        if (!canEdit) {
+            Utils.showMessage('Action non autorisée', 'error');
+            return;
+        }
+
+        const modal = document.getElementById('supplier-modal');
+        const title = document.getElementById('supplier-modal-title');
+        
+        if (supplierId) {
+            title.textContent = 'Modifier le fournisseur';
+            this.fillSupplierForm(supplierId);
+        } else {
+            title.textContent = 'Nouveau fournisseur';
+            this.clearSupplierForm();
+        }
+        
+        modal.style.display = 'block';
+    }
+
+    closeSupplierModal() {
+        document.getElementById('supplier-modal').style.display = 'none';
+    }
+
+    clearSupplierForm() {
+        document.getElementById('edit-supplier-id').value = '';
+        document.getElementById('supplier-code').value = '';
+        document.getElementById('supplier-name').value = '';
+        document.getElementById('supplier-contact').value = '';
+        document.getElementById('supplier-phone').value = '';
+        document.getElementById('supplier-email').value = '';
+        document.getElementById('supplier-address').value = '';
+    }
+
+    async fillSupplierForm(supplierId) {
+        try {
+            const supplier = this.suppliers.find(s => s.id === supplierId);
+            if (supplier) {
+                document.getElementById('edit-supplier-id').value = supplier.id;
+                document.getElementById('supplier-code').value = supplier.code;
+                document.getElementById('supplier-name').value = supplier.name;
+                document.getElementById('supplier-contact').value = supplier.contact || '';
+                document.getElementById('supplier-phone').value = supplier.phone || '';
+                document.getElementById('supplier-email').value = supplier.email || '';
+                document.getElementById('supplier-address').value = supplier.address || '';
+            }
+        } catch (error) {
+            Utils.showMessage('Erreur chargement fournisseur', 'error');
+        }
+    }
+
+    async saveSupplier(event) {
+        event.preventDefault();
+
+        const userRole = this.currentUser?.role || 'user';
+        const customRole = this.roles.find(r => r.name === userRole);
+        const permissions = customRole ? customRole.permissions : [];
+        const canEdit = userRole === 'admin' || userRole === 'manager' || userRole === 'reference' || permissions.includes('references');
+
+        if (!canEdit) {
+            Utils.showMessage('Action non autorisée', 'error');
+            return;
+        }
+
+        const supplierData = {
+            code: document.getElementById('supplier-code').value,
+            name: document.getElementById('supplier-name').value,
+            contact: document.getElementById('supplier-contact').value,
+            phone: document.getElementById('supplier-phone').value,
+            email: document.getElementById('supplier-email').value,
+            address: document.getElementById('supplier-address').value
+        };
+
+        const supplierId = document.getElementById('edit-supplier-id').value;
+
+        try {
+            if (supplierId) {
+                await ApiService.updateSupplier(supplierId, supplierData);
+                Utils.showMessage('Fournisseur modifié avec succès', 'success');
+            } else {
+                await ApiService.createSupplier(supplierData);
+                Utils.showMessage('Fournisseur créé avec succès', 'success');
+            }
+
+            await this.loadSuppliers();
+            this.closeSupplierModal();
+
+        } catch (error) {
+            Utils.showMessage(error.message, 'error');
+        }
+    }
+
+    async editSupplier(id) {
+        this.showSupplierModal(id);
+    }
+
+    async deleteSupplier(id) {
+        const userRole = this.currentUser?.role || 'user';
+        const customRole = this.roles.find(r => r.name === userRole);
+        const permissions = customRole ? customRole.permissions : [];
+        const canEdit = userRole === 'admin' || userRole === 'manager' || userRole === 'reference' || permissions.includes('references');
+
+        if (!canEdit) {
+            Utils.showMessage('Action non autorisée', 'error');
+            return;
+        }
+
+        if (!confirm('Êtes-vous sûr de vouloir supprimer ce fournisseur ?')) {
+            return;
+        }
+
+        try {
+            await ApiService.deleteSupplier(id);
+            Utils.showMessage('Fournisseur supprimé avec succès', 'success');
+            await this.loadSuppliers();
+        } catch (error) {
+            Utils.showMessage(error.message, 'error');
+        }
+    }
+
+    // === FONCTIONS LIVRAISONS ===
+    async loadDeliveries() {
+        try {
+            const response = await ApiService.getDeliveries();
+            this.deliveries = response.data || response;
+            this.renderDeliveriesTable();
+        } catch (error) {
+            console.error('Erreur chargement livraisons:', error);
+            Utils.showMessage('Erreur lors du chargement des livraisons', 'error');
+        }
+    }
+
+    renderDeliveriesTable() {
+        const container = document.getElementById('deliveries-table');
+        if (!container) return;
+        
+        if (!this.deliveries || this.deliveries.length === 0) {
+            container.innerHTML = '<tr><td colspan="7" class="no-data">Aucune livraison</td></tr>';
+            return;
+        }
+
+        container.innerHTML = this.deliveries.map(delivery => {
+            const statusClass = delivery.status === 'delivered' ? 'status-delivered' : 
+                               delivery.status === 'pending' ? 'status-pending' : 'status-cancelled';
+            const statusText = delivery.status === 'delivered' ? 'Livrée' : 
+                              delivery.status === 'pending' ? 'En attente' : 'Annulée';
+
+            const userRole = this.currentUser?.role || 'user';
+            const customRole = this.roles.find(r => r.name === userRole);
+            const permissions = customRole ? customRole.permissions : [];
+            const canEdit = userRole === 'admin' || userRole === 'manager' || permissions.includes('inventory-write');
+
+            const actionButtons = !canEdit ? 
+                '<td><em>Lecture seule</em></td>' :
+                `
+                <td>
+                    <button class="btn btn-sm" onclick="app.viewDelivery(${delivery.id})">Voir</button>
+                    <button class="btn btn-sm" onclick="app.editDelivery(${delivery.id})">Modifier</button>
+                    <button class="btn btn-sm btn-danger" onclick="app.deleteDelivery(${delivery.id})">Supprimer</button>
+                </td>
+                `;
+
+            return `
+                <tr>
+                    <td>${Utils.escapeHtml(delivery.delivery_number)}</td>
+                    <td>${Utils.escapeHtml(delivery.supplier_name)}</td>
+                    <td>${Utils.formatDate(delivery.delivery_date)}</td>
+                    <td>${delivery.items_count} articles</td>
+                    <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                    <td>${Utils.formatCurrency(delivery.total_amount)}</td>
+                    ${actionButtons}
+                </tr>
+            `;
+        }).join('');
+    }
+
+    showDeliveryModal(deliveryId = null) {
+        const userRole = this.currentUser?.role || 'user';
+        const customRole = this.roles.find(r => r.name === userRole);
+        const permissions = customRole ? customRole.permissions : [];
+        const canEdit = userRole === 'admin' || userRole === 'manager' || permissions.includes('inventory-write');
+
+        if (!canEdit) {
+            Utils.showMessage('Action non autorisée', 'error');
+            return;
+        }
+
+        const modal = document.getElementById('delivery-modal');
+        const title = document.getElementById('delivery-modal-title');
+        
+        if (deliveryId) {
+            title.textContent = 'Modifier la livraison';
+            this.fillDeliveryForm(deliveryId);
+        } else {
+            title.textContent = 'Nouvelle livraison';
+            this.clearDeliveryForm();
+        }
+        
+        this.populateDeliverySelects();
+        modal.style.display = 'block';
+    }
+
+    closeDeliveryModal() {
+        document.getElementById('delivery-modal').style.display = 'none';
+    }
+
+    clearDeliveryForm() {
+        document.getElementById('edit-delivery-id').value = '';
+        document.getElementById('delivery-supplier').value = '';
+        document.getElementById('delivery-date').value = new Date().toISOString().split('T')[0];
+        document.getElementById('delivery-reference').value = '';
+        this.deliveryItems = [];
+        this.renderDeliveryItems();
+    }
+
+    populateDeliverySelects() {
+        const supplierSelect = document.getElementById('delivery-supplier');
+        if (supplierSelect) {
+            supplierSelect.innerHTML = '<option value="">Choisir un fournisseur...</option>';
+            this.suppliers.forEach(supplier => {
+                supplierSelect.innerHTML += `<option value="${supplier.id}">${supplier.name}</option>`;
+            });
+        }
+    }
+
+    addDeliveryItem() {
+        this.deliveryItems.push({
+            article_id: '',
+            quantity: 1,
+            unit_price: 0
+        });
+        this.renderDeliveryItems();
+    }
+
+    removeDeliveryItem(index) {
+        this.deliveryItems.splice(index, 1);
+        this.renderDeliveryItems();
+    }
+
+    renderDeliveryItems() {
+        const container = document.getElementById('delivery-items');
+        if (!container) return;
+
+        container.innerHTML = '';
+
+        this.deliveryItems.forEach((item, index) => {
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'delivery-item';
+            itemDiv.innerHTML = `
+                <select onchange="app.updateDeliveryItem(${index}, 'article_id', this.value)" required>
+                    <option value="">Choisir un article...</option>
+                    ${this.articles.map(article => `
+                        <option value="${article.id}" ${item.article_id == article.id ? 'selected' : ''}>
+                            ${Utils.escapeHtml(article.name)} (${Utils.escapeHtml(article.code)})
+                        </option>
+                    `).join('')}
+                </select>
+                <input type="number" step="0.001" min="0.001" placeholder="Quantité" 
+                       value="${item.quantity}" 
+                       onchange="app.updateDeliveryItem(${index}, 'quantity', this.value)" required>
+                <input type="number" step="0.01" min="0" placeholder="Prix unitaire" 
+                       value="${item.unit_price}" 
+                       onchange="app.updateDeliveryItem(${index}, 'unit_price', this.value)" required>
+                <button type="button" class="remove-item" onclick="app.removeDeliveryItem(${index})">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            container.appendChild(itemDiv);
+        });
+    }
+
+    updateDeliveryItem(index, field, value) {
+        if (this.deliveryItems[index]) {
+            this.deliveryItems[index][field] = field === 'quantity' || field === 'unit_price' ? 
+                parseFloat(value) : value;
+        }
+    }
+
+    async saveDelivery(event) {
+        event.preventDefault();
+
+        const userRole = this.currentUser?.role || 'user';
+        const customRole = this.roles.find(r => r.name === userRole);
+        const permissions = customRole ? customRole.permissions : [];
+        const canEdit = userRole === 'admin' || userRole === 'manager' || permissions.includes('inventory-write');
+
+        if (!canEdit) {
+            Utils.showMessage('Action non autorisée', 'error');
+            return;
+        }
+
+        if (this.deliveryItems.length === 0) {
+            Utils.showMessage('Veuillez ajouter au moins un article', 'error');
+            return;
+        }
+
+        const deliveryData = {
+            supplier_id: document.getElementById('delivery-supplier').value,
+            delivery_date: document.getElementById('delivery-date').value,
+            reference: document.getElementById('delivery-reference').value,
+            items: this.deliveryItems
+        };
+
+        const deliveryId = document.getElementById('edit-delivery-id').value;
+
+        try {
+            if (deliveryId) {
+                await ApiService.updateDelivery(deliveryId, deliveryData);
+                Utils.showMessage('Livraison modifiée avec succès', 'success');
+            } else {
+                await ApiService.createDelivery(deliveryData);
+                Utils.showMessage('Livraison créée avec succès', 'success');
+            }
+
+            await this.loadDeliveries();
+            this.closeDeliveryModal();
+
+        } catch (error) {
+            Utils.showMessage(error.message, 'error');
+        }
+    }
+
+    async editDelivery(id) {
+        this.showDeliveryModal(id);
+    }
+
+    async deleteDelivery(id) {
+        const userRole = this.currentUser?.role || 'user';
+        const customRole = this.roles.find(r => r.name === userRole);
+        const permissions = customRole ? customRole.permissions : [];
+        const canEdit = userRole === 'admin' || userRole === 'manager' || permissions.includes('inventory-write');
+
+        if (!canEdit) {
+            Utils.showMessage('Action non autorisée', 'error');
+            return;
+        }
+
+        if (!confirm('Êtes-vous sûr de vouloir supprimer cette livraison ?')) {
+            return;
+        }
+
+        try {
+            await ApiService.deleteDelivery(id);
+            Utils.showMessage('Livraison supprimée avec succès', 'success');
+            await this.loadDeliveries();
+        } catch (error) {
+            Utils.showMessage(error.message, 'error');
+        }
+    }
+
+    // === FONCTIONS FICHES TECHNIQUES ===
+    async loadTechnicalSheets() {
+        try {
+            const response = await ApiService.getTechnicalSheets();
+            this.technicalSheets = response.data || response;
+            this.renderTechnicalSheetsTable();
+        } catch (error) {
+            console.error('Erreur chargement fiches techniques:', error);
+            Utils.showMessage('Erreur lors du chargement des fiches techniques', 'error');
+        }
+    }
+
+    renderTechnicalSheetsTable() {
+        const container = document.getElementById('technical-sheets-table');
+        if (!container) return;
+        
+        if (!this.technicalSheets || this.technicalSheets.length === 0) {
+            container.innerHTML = '<tr><td colspan="5" class="no-data">Aucune fiche technique</td></tr>';
+            return;
+        }
+
+        container.innerHTML = this.technicalSheets.map(sheet => {
+            const userRole = this.currentUser?.role || 'user';
+            const customRole = this.roles.find(r => r.name === userRole);
+            const permissions = customRole ? customRole.permissions : [];
+            const canEdit = userRole === 'admin' || userRole === 'manager' || userRole === 'reference' || permissions.includes('references');
+
+            const actionButtons = !canEdit ? 
+                '<td><em>Lecture seule</em></td>' :
+                `
+                <td>
+                    <button class="btn btn-sm" onclick="app.viewTechnicalSheet(${sheet.id})">Voir</button>
+                    <button class="btn btn-sm" onclick="app.editTechnicalSheet(${sheet.id})">Modifier</button>
+                    <button class="btn btn-sm btn-danger" onclick="app.deleteTechnicalSheet(${sheet.id})">Supprimer</button>
+                </td>
+                `;
+
+            return `
+                <tr>
+                    <td>${Utils.escapeHtml(sheet.article_name)}</td>
+                    <td>${Utils.escapeHtml(sheet.reference || '-')}</td>
+                    <td>${Utils.escapeHtml(sheet.specifications ? sheet.specifications.substring(0, 100) + '...' : '-')}</td>
+                    <td>${Utils.formatDate(sheet.updated_at)}</td>
+                    ${actionButtons}
+                </tr>
+            `;
+        }).join('');
+    }
+
+    showTechnicalSheetModal(sheetId = null) {
+        const userRole = this.currentUser?.role || 'user';
+        const customRole = this.roles.find(r => r.name === userRole);
+        const permissions = customRole ? customRole.permissions : [];
+        const canEdit = userRole === 'admin' || userRole === 'manager' || userRole === 'reference' || permissions.includes('references');
+
+        if (!canEdit) {
+            Utils.showMessage('Action non autorisée', 'error');
+            return;
+        }
+
+        const modal = document.getElementById('technical-sheet-modal');
+        const title = document.getElementById('technical-sheet-modal-title');
+        
+        if (sheetId) {
+            title.textContent = 'Modifier la fiche technique';
+            this.fillTechnicalSheetForm(sheetId);
+        } else {
+            title.textContent = 'Nouvelle fiche technique';
+            this.clearTechnicalSheetForm();
+        }
+        
+        this.populateTechnicalSheetSelects();
+        modal.style.display = 'block';
+    }
+
+    closeTechnicalSheetModal() {
+        document.getElementById('technical-sheet-modal').style.display = 'none';
+    }
+
+    clearTechnicalSheetForm() {
+        document.getElementById('edit-technical-sheet-id').value = '';
+        document.getElementById('technical-sheet-article').value = '';
+        document.getElementById('technical-sheet-reference').value = '';
+        document.getElementById('technical-sheet-specifications').value = '';
+        document.getElementById('technical-sheet-document').value = '';
+    }
+
+    populateTechnicalSheetSelects() {
+        const articleSelect = document.getElementById('technical-sheet-article');
+        if (articleSelect) {
+            articleSelect.innerHTML = '<option value="">Choisir un article...</option>';
+            this.articles.forEach(article => {
+                articleSelect.innerHTML += `<option value="${article.id}">${article.name} (${article.code})</option>`;
+            });
+        }
+    }
+
+    async saveTechnicalSheet(event) {
+        event.preventDefault();
+
+        const userRole = this.currentUser?.role || 'user';
+        const customRole = this.roles.find(r => r.name === userRole);
+        const permissions = customRole ? customRole.permissions : [];
+        const canEdit = userRole === 'admin' || userRole === 'manager' || userRole === 'reference' || permissions.includes('references');
+
+        if (!canEdit) {
+            Utils.showMessage('Action non autorisée', 'error');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('article_id', document.getElementById('technical-sheet-article').value);
+        formData.append('reference', document.getElementById('technical-sheet-reference').value);
+        formData.append('specifications', document.getElementById('technical-sheet-specifications').value);
+        
+        const fileInput = document.getElementById('technical-sheet-document');
+        if (fileInput.files[0]) {
+            formData.append('document', fileInput.files[0]);
+        }
+
+        const sheetId = document.getElementById('edit-technical-sheet-id').value;
+
+        try {
+            if (sheetId) {
+                await ApiService.updateTechnicalSheet(sheetId, formData);
+                Utils.showMessage('Fiche technique modifiée avec succès', 'success');
+            } else {
+                await ApiService.createTechnicalSheet(formData);
+                Utils.showMessage('Fiche technique créée avec succès', 'success');
+            }
+
+            await this.loadTechnicalSheets();
+            this.closeTechnicalSheetModal();
+
+        } catch (error) {
+            Utils.showMessage(error.message, 'error');
+        }
+    }
+
+    async editTechnicalSheet(id) {
+        this.showTechnicalSheetModal(id);
+    }
+
+    async deleteTechnicalSheet(id) {
+        const userRole = this.currentUser?.role || 'user';
+        const customRole = this.roles.find(r => r.name === userRole);
+        const permissions = customRole ? customRole.permissions : [];
+        const canEdit = userRole === 'admin' || userRole === 'manager' || userRole === 'reference' || permissions.includes('references');
+
+        if (!canEdit) {
+            Utils.showMessage('Action non autorisée', 'error');
+            return;
+        }
+
+        if (!confirm('Êtes-vous sûr de vouloir supprimer cette fiche technique ?')) {
+            return;
+        }
+
+        try {
+            await ApiService.deleteTechnicalSheet(id);
+            Utils.showMessage('Fiche technique supprimée avec succès', 'success');
+            await this.loadTechnicalSheets();
+        } catch (error) {
+            Utils.showMessage(error.message, 'error');
+        }
+    }
 }
 
 // FONCTIONS GLOBALES AJOUTÉES
@@ -1682,6 +2258,35 @@ function showTab(tabName) {
     console.log('📝 Chargement de l\'historique...');
     historyService.renderHistory(); // 🔥 CORRECTION : utiliser historyService directement
   }
+  // Dans la méthode showTab de la classe App
+switch(tabName) {
+    case 'dashboard':
+        this.loadDashboard();
+        break;
+    case 'inventory':
+        this.renderArticles();
+        break;
+    case 'users':
+        this.loadUsers();
+        break;
+    case 'references':
+        this.loadReferences();
+        break;
+    case 'history':
+        console.log('📝 Chargement de l\'historique...');
+        historyService.renderHistory();
+        break;
+    // 🔥 NOUVEAUX - Ajouter ces cas
+    case 'suppliers':
+        this.loadSuppliers();
+        break;
+    case 'deliveries':
+        this.loadDeliveries();
+        break;
+    case 'technical-sheets':
+        this.loadTechnicalSheets();
+        break;
+}
 }
 
 function showRefTab(tabName) {
@@ -1786,6 +2391,45 @@ function saveUnit(event) {
 function filterArticles() {
     app.filterArticles();
 }
+// 🔥 NOUVELLES FONCTIONS GLOBALES
+function showSupplierModal() {
+    app.showSupplierModal();
+}
 
+function closeSupplierModal() {
+    app.closeSupplierModal();
+}
+
+function saveSupplier(event) {
+    app.saveSupplier(event);
+}
+
+function showDeliveryModal() {
+    app.showDeliveryModal();
+}
+
+function closeDeliveryModal() {
+    app.closeDeliveryModal();
+}
+
+function saveDelivery(event) {
+    app.saveDelivery(event);
+}
+
+function addDeliveryItem() {
+    app.addDeliveryItem();
+}
+
+function showTechnicalSheetModal() {
+    app.showTechnicalSheetModal();
+}
+
+function closeTechnicalSheetModal() {
+    app.closeTechnicalSheetModal();
+}
+
+function saveTechnicalSheet(event) {
+    app.saveTechnicalSheet(event);
+}
 // Initialiser l'application
 const app = new App();
